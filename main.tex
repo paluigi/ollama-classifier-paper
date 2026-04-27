@@ -1,0 +1,669 @@
+% =============================================================================
+% main.tex — Zero-Shot Text Classification with Locally-Hosted Large Language Models
+% Authors: Luigi Palumbo, Mengting Yu, Carolina Camassa
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+% ---------- Packages ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{amsmath,amssymb}
+
+% ---------- Bibliography ----------
+\usepackage[style=apa,backend=biber,natbib=true]{biblatex}
+\addbibresource{references.bib}
+
+% ---------- Hyperref setup ----------
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=blue!70!black,
+  urlcolor=blue!60!black,
+}
+
+% ---------- Listings setup ----------
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!50!black}\itshape,
+  stringstyle=\color{red!70!black},
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  backgroundcolor=\color{gray!5},
+}
+
+% ---------- Title ----------
+\title{
+  \textbf{Zero-Shot Text Classification with Locally-Hosted\\
+  Large Language Models: The \texttt{ollama-classifier} Library}
+}
+\author{
+  Luigi Palumbo\thanks{Corresponding author.}
+  \and Mengting Yu
+  \and Carolina Camassa
+}
+\date{\today}
+
+% =============================================================================
+\begin{document}
+
+\maketitle
+
+% ---------- Abstract ----------
+\begin{abstract}
+  Large Language Models (LLMs) have emerged as powerful zero-shot classifiers,
+  yet their adoption in domains that demand data privacy, cost control, and
+  offline operation remains limited by the reliance on proprietary cloud APIs.
+  We present \texttt{ollama-classifier}, an open-source Python library that
+  enables zero-shot and few-shot text classification using locally-hosted LLMs
+  through the Ollama runtime. The library provides constrained output generation,
+  confidence scoring, batch processing, and seamless integration with multiple
+  inference backends (Ollama, vLLM, SGLang, and llama.cpp), making advanced
+  LLM-based classification accessible without fine-tuning, API keys, or
+  internet connectivity. To further lower the barrier to entry, we introduce a
+  companion desktop GUI application built with Flet that allows non-technical
+  users---such as domain experts, statisticians, and data officers---to leverage
+  retrieval-augmented classification through an intuitive four-tab workflow.
+  We situate our contribution within the broader literature on retrieval-augmented
+  classification, discuss the library's architecture and design rationale, and
+  highlight its applicability to real-world classification tasks in official
+  statistics and beyond.
+\end{abstract}
+
+\noindent\textbf{Keywords:} zero-shot classification, large language models,
+local inference, retrieval-augmented classification, Ollama, open-source software
+
+% =============================================================================
+\section{Introduction}
+\label{sec:introduction}
+% =============================================================================
+
+The advent of Large Language Models (LLMs) has fundamentally transformed
+natural language processing, enabling remarkable zero-shot and few-shot
+performance across a wide range of tasks \citep{brown2020language,
+radford2019gpt2, zhao2023survey}. Among these tasks, text classification---the
+assignment of predefined categorical labels to free-form text---stands out as a
+particularly impactful application, with use cases spanning sentiment analysis
+\citep{wang2024sentiment}, economic taxonomy coding, and product categorization
+\citep{nunes2025rac}.
+
+Traditionally, text classification has relied on supervised machine learning
+pipelines that require substantial labeled training data, feature engineering,
+and model fine-tuning. While transformer-based architectures such as BERT
+\citep{berki2025nlp} have improved classification accuracy, they remain
+data-intensive and offer limited adaptability to new or evolving taxonomies
+without costly retraining. The emergence of LLMs has challenged this paradigm:
+models such as GPT-3 \citep{brown2020language} and GPT-4 \citep{openai2023gpt4}
+have demonstrated that generative models can perform classification through
+in-context learning, eliminating the need for task-specific training data.
+
+However, leveraging these capabilities in production environments---particularly
+in sensitive domains such as official statistics, healthcare, and
+finance---introduces significant challenges. Proprietary cloud-based APIs incur
+recurring costs, require internet connectivity, and raise data privacy concerns
+when processing confidential or regulated information. These constraints limit
+the applicability of LLM-based classification in settings where data sovereignty
+and operational independence are paramount.
+
+The recent proliferation of open-source LLMs---including LLaMA
+\citep{touvron2023llama, touvron2023llama, meta2024llama3}, Mistral
+\citep{jiang2023mistral}, Qwen \citep{yang2024qwen2}, and DeepSeek-R1
+\citep{deepseek2025r1}---combined with lightweight serving frameworks such as
+Ollama \citep{ollama}, has made it feasible to run capable language models on
+consumer hardware. This shift creates an opportunity to build classification
+tools that combine the zero-shot reasoning power of LLMs with the privacy,
+cost-effectiveness, and offline capability of local inference.
+
+We present \texttt{ollama-classifier}, an open-source Python library that
+realizes this opportunity by providing a unified interface for zero-shot and
+few-shot text classification using locally-hosted LLMs. The library is designed
+around three core principles:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{No fine-tuning required.} Classification is performed through
+        prompting and retrieval augmentation, leveraging the model's pre-trained
+        knowledge without any task-specific training.
+  \item \textbf{Local and private.} All inference runs on the user's hardware
+        through the Ollama runtime or compatible backends, ensuring that no
+        data leaves the local machine.
+  \item \textbf{Accessible to non-technical users.} A companion GUI application
+        provides a point-and-click interface for the full classification
+        workflow, abstracting away the complexity of prompt engineering,
+        backend configuration, and batch processing.
+\end{enumerate}
+
+The remainder of this paper is organized as follows.
+Section~\ref{sec:related} reviews related work on LLM-based classification and
+retrieval augmentation.
+Section~\ref{sec:background} provides background on the enabling technologies.
+Section~\ref{sec:library} describes the \texttt{ollama-classifier} library's
+architecture and API.
+Section~\ref{sec:gui} introduces the companion GUI application.
+Section~\ref{sec:application} illustrates a real-world application to product
+classification.
+Section~\ref{sec:discussion} discusses design decisions and limitations, and
+Section~\ref{sec:conclusion} concludes with directions for future work.
+
+% =============================================================================
+\section{Related Work}
+\label{sec:related}
+% =============================================================================
+
+\subsection{LLMs as Classifiers}
+
+The use of generative language models as classifiers has its roots in the
+observation that autoregressive LLMs can perform discriminative tasks through
+careful prompt design. \citet{radford2019gpt2} first demonstrated that GPT-2
+could perform zero-shot task transfer without explicit supervision, establishing
+the paradigm of leveraging generative pre-training for discriminative
+downstream tasks. This capability was dramatically scaled by GPT-3
+\citep{brown2020language}, which showed that few-shot in-context learning could
+achieve competitive performance on classification benchmarks without any
+gradient updates.
+
+Subsequent work has explored the boundaries of this approach.
+\citet{liu2023preliminary} provide a systematic survey of prompting methods,
+cataloguing strategies for instructing LLMs to perform classification through
+template-based prompts. \citet{mu2024prompt} investigate how prompt complexity
+affects zero-shot classification performance, finding that well-structured
+prompts with explicit instructions and output constraints significantly improve
+accuracy. \citet{gilardi2023chatgpt} demonstrate that ChatGPT can match or
+exceed crowd-worker quality on text annotation tasks, providing empirical
+support for using LLMs as practical classification tools.
+
+\subsection{Retrieval-Augmented Classification}
+
+Retrieval-Augmented Generation (RAG), introduced by \citet{lewis2020retrieval},
+grounds LLM outputs in externally retrieved evidence, improving both factuality
+and stability. This paradigm has been adapted to classification tasks through
+Retrieval-Augmented Classification (RAC). \citet{yu2023retrieval} demonstrate
+that combining nearest-neighbor retrieval with few-shot prompting improves text
+classification without fine-tuning. \citet{abdullahi2024retrieval} extend this
+to the zero-shot setting, showing that retrieved exemplars can enable
+classification into arbitrary taxonomies without training data.
+
+Most recently, \citet{nunes2025rac} apply RAC to COICOP 2018 product
+classification, constructing a synthetic knowledge base of 34,451 exemplars
+and achieving up to 0.80 accuracy at the finest taxonomy level. The
+\texttt{ollama-classifier} library builds directly on this line of research,
+operationalizing the RAC framework as a general-purpose, reusable Python tool.
+
+\subsection{Existing Classification Libraries}
+
+Several open-source projects address LLM-based text classification.
+\texttt{llmclassifier} \citep{cvxtz2023llmclassifier} provides a Python
+framework for building classification pipelines with LLMs, but targets API-based
+models and does not support local inference. \texttt{llmClassificR}
+\citep{golino2023llmclassificr} offers similar functionality in R, again
+relying on cloud-hosted models.
+
+\texttt{ollama-classifier} differentiates itself by (i) focusing exclusively on
+local inference through Ollama and compatible backends, (ii) providing
+constrained output generation that forces the model to return only valid class
+labels, (iii) implementing confidence scoring through multi-call softmax
+evaluation, and (iv) offering a dedicated GUI application for non-technical
+users---features not found together in any existing library.
+
+\subsection{Democratization of AI Tools}
+
+The gap between ML models and end-users has been widely documented
+\citep{amershi2019software}. AutoML \citep{he2021automl} aims to automate the
+ML pipeline for non-experts, while \citet{lazaridou2023ai} argue for
+democratizing access to AI tools for domain specialists. The
+\texttt{ollama-classifier} GUI extends this philosophy to LLM-based
+classification, enabling economists, statisticians, and data officers to
+leverage state-of-the-art models without writing code.
+
+% =============================================================================
+\section{Background}
+\label{sec:background}
+% =============================================================================
+
+\subsection{The Ollama Runtime}
+
+Ollama \citep{ollama} is an open-source framework for running LLMs locally on
+consumer hardware. It provides a lightweight model server with a REST API,
+model management (pull, list, delete), and support for quantized inference
+that enables running models ranging from 1B to 70B+ parameters on standard
+workstations. Ollama supports a wide range of model families, including LLaMA
+\citep{touvron2023llama, meta2024llama3}, Mistral \citep{jiang2023mistral},
+Qwen \citep{yang2024qwen2}, DeepSeek-R1 \citep{deepseek2025r1}, and many
+others, making it a versatile platform for local LLM deployment.
+
+The Ollama Python library \citep{ollama_python} provides a convenient client
+interface, handling API communication and structured outputs. The
+\texttt{ollama-classifier} library wraps this client to offer a higher-level
+classification API, abstracting away prompt construction, output parsing, and
+confidence computation.
+
+\subsection{Inference Backends}
+
+While Ollama serves as the default backend, \texttt{ollama-classifier}
+supports multiple inference engines through a unified interface:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Ollama}: The default backend, ideal for consumer hardware
+        and single-user workflows.
+  \item \textbf{vLLM}: A high-throughput serving engine optimized for batch
+        inference and production deployments.
+  \item \textbf{SGLang}: A fast serving system for large language models,
+        offering competitive latency and throughput.
+  \item \textbf{llama.cpp}: A lightweight C++ inference engine supporting CPU
+        and mixed CPU/GPU environments, ideal for resource-constrained
+        settings.
+\end{itemize}
+
+All backends share a common configuration interface, allowing users to switch
+between them without modifying application code. This design ensures that
+classification pipelines built with \texttt{ollama-classifier} can be deployed
+across diverse hardware configurations, from laptops to GPU clusters.
+
+\subsection{Embedding Models for Retrieval}
+
+The retrieval component of RAC relies on embedding models that convert text
+into dense vector representations. SentenceTransformers
+\citep{reimers2019sentence} provides the foundational Siamese BERT
+architecture for producing semantically meaningful sentence embeddings. The E5
+family \citep{wang2022text} offers multilingual semantic similarity across
+100 languages, while the GTE family \citep{chen2024gte} provides
+instruction-tuned embeddings with strong multilingual performance. In the RAC
+evaluation by \citet{nunes2025rac}, the GTE models achieved the highest
+retrieval presence (90.7\%), confirming their effectiveness for
+classification-oriented retrieval tasks.
+
+% =============================================================================
+\section{The \texttt{ollama-classifier} Library}
+\label{sec:library}
+% =============================================================================
+
+\subsection{Design Philosophy}
+
+\texttt{ollama-classifier} is designed as a lightweight, modular Python library
+that enables users to perform text classification with LLMs through a minimal
+API surface. The design follows these principles:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Simplicity}: A classification call requires only a text input
+        and a list of candidate labels. All complexity---prompt construction,
+        output parsing, backend communication---is handled internally.
+  \item \textbf{Flexibility}: Users can customize the system prompt, provide
+        label descriptions, choose between multiple classification strategies,
+        and switch inference backends transparently.
+  \item \textbf{Reliability}: Constrained output generation ensures that the
+        model returns only valid class labels, preventing hallucinated or
+        malformed predictions. Confidence scoring enables triage between
+        high-confidence auto-accepted labels and low-confidence cases
+        requiring human review.
+  \item \textbf{Scalability}: Batch and async APIs enable processing large
+        datasets efficiently, with concurrent requests supported across all
+        backends.
+\end{enumerate}
+
+\subsection{Core API}
+
+The library exposes two primary classifier classes:
+\texttt{OllamaClassifier} (Ollama-specific) and \texttt{LLMClassifier}
+(backend-agnostic). Both share an identical API surface, shown in
+Table~\ref{tab:api}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Core methods of the \texttt{ollama-classifier} API. Each method
+           has an asynchronous counterpart prefixed with \texttt{a}.}
+  \label{tab:api}
+  \begin{tabular}{lp{8cm}}
+    \toprule
+    \textbf{Method} & \textbf{Description} \\
+    \midrule
+    \texttt{generate()} & Constrained output only; returns the predicted label
+                          without confidence scores (fastest method). \\
+    \texttt{score()}    & Multi-call evaluation with softmax; makes $N$ API
+                          calls for $N$ choices to compute calibrated
+                          probabilities. \\
+    \texttt{classify()} & Full classification with confidence scores; combines
+                          generation with probability estimation. \\
+    \texttt{batch\_generate()} & Batch constrained output for multiple texts. \\
+    \texttt{batch\_score()}    & Batch scoring for multiple texts. \\
+    \texttt{batch\_classify()} & Batch classification with confidence scores. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Classification Strategies}
+
+\texttt{ollama-classifier} supports three classification strategies, each
+offering a different trade-off between speed and confidence calibration:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Generate only} (\texttt{generate}): The model receives a single
+        prompt containing the text and candidate labels, and returns one
+        predicted label. This is the fastest strategy, suitable when speed is
+        critical and confidence estimation is not required.
+
+  \item \textbf{Multi-call scoring} (\texttt{score}): The model evaluates each
+        candidate label independently through $N$ separate API calls, producing
+        raw log-probability scores. These scores are then normalized using a
+        softmax function to produce a calibrated probability distribution over
+        all classes:
+        \[
+          \text{P}(y_i \mid x) = \frac{\exp(s_i)}{\sum_{j=1}^{N} \exp(s_j)},
+        \]
+        where $s_i$ is the log-probability score for class $y_i$ and $N$ is the
+        number of candidate classes.
+
+  \item \textbf{Full classification} (\texttt{classify}): Combines constrained
+        generation with confidence scoring, returning both the predicted label
+        and the probability distribution over all candidates. This strategy
+        is recommended for applications that require both a prediction and a
+        measure of certainty for triage purposes.
+\end{enumerate}
+
+\subsection{Constrained Output Generation}
+
+A key design feature of \texttt{ollama-classifier} is the enforcement of
+constrained output. The system prompt instructs the model to return only the
+exact text of one of the provided candidate labels, preventing hallucinated
+categories, partial responses, or verbose explanations. When supported by the
+backend, JSON schema constraints are applied to structurally guarantee valid
+output. For backends that do not support schema constraints (e.g., standard
+Ollama), the prompt-based approach ensures reliable output formatting through
+careful instruction design informed by the prompting literature
+\citep{liu2023preliminary, mu2024prompt}.
+
+\subsection{Confidence Scoring and Human-in-the-Loop}
+
+The confidence scoring mechanism enables a human-in-the-loop workflow
+\citep{schroeder2025just, hakimi2026humans}. High-confidence predictions can
+be automatically accepted, while low-confidence predictions are flagged for
+human review. \citet{vasquez2026trust} emphasize the importance of calibrating
+LLM confidence scores for automated assessment, and the multi-call softmax
+approach implemented in \texttt{ollama-classifier} provides a principled
+foundation for such calibration.
+
+The library also supports an ``opt-out'' mechanism, where an additional
+``none of the above'' option is included among the candidate labels. This
+allows the model to abstain from classification when none of the provided
+options are appropriate, reducing the risk of forcing incorrect labels
+\citep{nunes2025rac}. In the evaluation by \citet{nunes2025rac}, the
+DeepSeek-R1 models demonstrated particularly well-calibrated opt-out behavior,
+with correct abstention rates exceeding 85\%.
+
+\subsection{Usage Example}
+
+Listing~\ref{lst:usage} demonstrates a basic classification workflow using
+\texttt{ollama-classifier}. The example shows how to initialize the classifier,
+define candidate labels with descriptions, and classify a product description.
+
+\begin{lstlisting}[caption={Basic usage of \texttt{ollama-classifier} for
+  zero-shot product classification.},
+  label={lst:usage}]
+from ollama_classifier import OllamaClassifier
+
+classifier = OllamaClassifier(model="llama3.2")
+
+choices = {
+    "Food and non-alcoholic beverages":
+        "Edible items, fresh or packaged food, drinks",
+    "Clothing and footwear":
+        "Garments, shoes, accessories for personal use",
+    "Electronics":
+        "Consumer electronic devices and accessories",
+}
+
+result = classifier.classify(
+    text="Organic whole wheat pasta 500g",
+    choices=choices,
+)
+print(result)  # ClassificationResult(label=..., scores={...})
+\end{lstlisting}
+
+% =============================================================================
+\section{Graphical User Interface}
+\label{sec:gui}
+% =============================================================================
+
+While the Python library provides a powerful programmatic interface, many
+potential users of LLM-based classification---domain experts, statisticians,
+data officers, and analysts---may lack programming expertise.
+\citet{amershi2019software} identify the gap between ML models and end-users
+as a critical barrier to adoption, and \citet{he2021automl} demonstrate that
+automating ML workflows significantly lowers this barrier.
+
+To address this challenge, we developed \texttt{ollama-classifier-gui}, a
+companion desktop application that provides a point-and-click interface for
+the full classification workflow. The application is built with Flet, a
+Python UI framework that enables cross-platform desktop applications from a
+single codebase.
+
+\subsection{Architecture}
+
+The GUI application wraps the \texttt{ollama-classifier} library as a backend
+engine, exposing its full functionality through an intuitive visual interface.
+The application supports the same multiple inference backends as the library
+(Ollama, vLLM, SGLang, llama.cpp), with all backend configuration managed
+through a dedicated settings panel. API keys, where required, are stored using
+the operating system's native secure storage mechanism (Keychain on macOS,
+Credential Manager on Windows, libsecret on Linux), ensuring that sensitive
+credentials are never stored in plain text.
+
+\subsection{Four-Tab Workflow}
+
+The application is structured around a four-tab workflow that mirrors the
+classification pipeline:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Settings tab}: Configure the inference backend (Ollama,
+        vLLM, SGLang, or llama.cpp), select the model, and set connection
+        parameters such as base URL, API key, timeout, and maximum tokens.
+
+  \item \textbf{Data Input tab}: Load text data for classification. Users can
+        import CSV or JSON files, paste text directly, or use the system file
+        picker to select datasets. The tab displays a preview of the loaded
+        data with column mapping for the text field.
+
+  \item \textbf{Schema tab}: Define the classification schema by specifying
+        candidate labels and optional descriptions. Users can type labels
+        manually or import them from a file. The schema tab also allows
+        selecting the classification strategy (generate, score, or classify)
+        and configuring an optional custom system prompt.
+
+  \item \textbf{Results tab}: View classification outputs in a structured
+        table showing each input text alongside the predicted label and, when
+        available, confidence scores for all candidate classes. Results can be
+        exported to CSV or JSON for downstream processing.
+\end{enumerate}
+
+This workflow design ensures that non-technical users can perform
+classification without encountering any code or command-line interfaces, while
+still having access to advanced configuration options when needed.
+
+\subsection{Significance}
+
+The GUI application serves a critical role in the \texttt{ollama-classifier}
+ecosystem by bridging the gap between the technical capabilities of modern
+LLMs and the operational needs of domain practitioners. National Statistical
+Institutes, research teams, and government agencies that need to classify
+large volumes of text data---such as web-scraped product descriptions for
+Consumer Price Index compilation \citep{cavallo2013online, cavallo2017online,
+nunes2025rac}---can now leverage state-of-the-art LLM classification without
+requiring software engineering expertise.
+
+% =============================================================================
+\section{Application to Product Classification}
+\label{sec:application}
+% =============================================================================
+
+To illustrate the practical utility of \texttt{ollama-classifier}, we describe
+its application to the classification of consumer products into the COICOP
+2018 taxonomy \citep{un2018coicop}, a task of direct relevance to the
+compilation of Consumer Price Indices by National Statistical Institutes.
+
+\subsection{The Classification Challenge}
+
+COICOP 2018 is an international standard developed by the United Nations to
+categorize household expenditures by function. The taxonomy comprises a
+four-level hierarchical structure, from broad divisions (e.g., ``Food and
+non-alcoholic beverages'') down to fine-grained subclasses (e.g., ``Other
+ edible products''), encompassing 294 subclasses at the most granular level.
+Classifying web-scraped product descriptions into this taxonomy presents
+several challenges: high linguistic variability across retailers and countries,
+strong class imbalance, textual overlap between semantically similar
+subclasses, and the need for multilingual coverage.
+
+\subsection{Retrieval-Augmented Classification Pipeline}
+
+\texttt{ollama-classifier} supports a full retrieval-augmented classification
+pipeline. The workflow proceeds in three stages:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Knowledge base construction}: Synthetic exemplars are generated
+        for each COICOP subclass using LLM prompts informed by official
+        definitions. These exemplars are embedded using models such as GTE
+        \citep{chen2024gte} or E5 \citep{wang2022text} to form a semantic
+        index.
+
+  \item \textbf{Retrieval}: Given a product description, the system retrieves
+        the top-$k$ most semantically similar exemplars from the knowledge
+        base, along with their associated COICOP subclass labels and
+        definitions.
+
+  \item \textbf{Generative classification}: The retrieved exemplars (or their
+        associated subclass definitions) are incorporated into the
+        classification prompt, and the LLM performs the final classification
+        by reasoning over both the input text and the retrieved context.
+\end{enumerate}
+
+This pipeline, evaluated by \citet{nunes2025rac}, achieves up to 0.80 accuracy
+at the finest COICOP level using the classification-by-definition approach with
+Qwen2.5-32B \citep{yang2024qwen2}. Notably, even compact models such as
+Mistral 7B \citep{jiang2023mistral} achieve strong overall performance (63.8\%
+accuracy at Level 4), demonstrating that effective classification does not
+require the largest available models.
+
+\subsection{Deployment Scenarios}
+
+\texttt{ollama-classifier} supports two primary deployment scenarios for this
+application:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Programmatic pipeline}: Data scientists and engineers can
+        integrate \texttt{ollama-classifier} into automated data processing
+        pipelines, using the batch and async APIs to classify large volumes of
+        products efficiently.
+
+  \item \textbf{GUI-assisted workflow}: Non-technical users can load product
+        datasets, define or import COICOP subclass labels, configure the
+        classification parameters, and review results through the GUI
+        application, with the option to export classified data for downstream
+        analysis.
+\end{itemize}
+
+In both scenarios, the local inference model ensures that product data---which
+may include commercially sensitive pricing information---never leaves the
+user's machine.
+
+% =============================================================================
+\section{Discussion}
+\label{sec:discussion}
+% =============================================================================
+
+\subsection{Design Decisions}
+
+Several design decisions distinguish \texttt{ollama-classifier} from
+alternative approaches:
+
+\textbf{Local-first inference.} By defaulting to Ollama for local model
+serving, the library prioritizes privacy and cost-effectiveness. While
+cloud-based APIs offer access to larger models, the trade-off is often
+unacceptable in sensitive domains. The support for multiple backends (vLLM,
+SGLang, llama.cpp) ensures that users can choose the inference engine that
+best matches their hardware and deployment requirements.
+
+\textbf{No fine-tuning.} The library deliberately avoids any fine-tuning
+step, relying entirely on prompting and retrieval augmentation. This design
+choice maximizes flexibility: users can switch models, add or remove classes,
+and adapt to new domains without retraining. The trade-off is that
+fine-tuned models may achieve higher accuracy on specific tasks, but at the
+cost of reduced generality and increased computational requirements.
+
+\textbf{Constrained output.} Enforcing valid class labels through prompt
+design and, where available, JSON schema constraints is essential for
+production deployment. Unconstrained LLM outputs are prone to hallucination,
+verbosity, and formatting inconsistencies that would break downstream
+processing pipelines.
+
+\subsection{Limitations}
+
+Several limitations should be acknowledged. First, the quality of
+classification depends on the underlying model's capabilities. While recent
+open-source models have improved dramatically, smaller models (below 3B
+parameters) may struggle with complex or ambiguous classification tasks. The
+results reported by \citet{nunes2025rac} show that models with fewer than
+1.5B parameters achieve only marginal classification accuracy, suggesting a
+practical lower bound for effective deployment.
+
+Second, bias and fairness concerns apply to LLM-based classification
+\citep{gallegos2024bias}. The models' pre-training data may encode societal
+biases that affect classification outcomes, particularly when classifying
+texts related to demographic, economic, or cultural categories. Users should
+be aware of these risks and consider bias auditing tools
+\citep{yuan2026biasahead} when deploying \texttt{ollama-classifier} in
+sensitive applications.
+
+Third, the multi-call scoring strategy trades computational cost for
+calibrated confidence estimates. For classification tasks with many candidate
+labels, the $N$-call approach may be prohibitively expensive, and users may
+need to rely on the faster generate-only strategy.
+
+Finally, while the GUI application significantly lowers the barrier to entry,
+it currently operates as a single-user desktop application. Multi-user,
+server-based deployments would require additional infrastructure that is
+beyond the current scope.
+
+% =============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% =============================================================================
+
+We have presented \texttt{ollama-classifier}, an open-source Python library
+that enables zero-shot and few-shot text classification using locally-hosted
+Large Language Models. The library provides constrained output generation,
+confidence scoring, batch processing, and multi-backend support, making
+advanced LLM-based classification accessible without fine-tuning, API keys,
+or internet connectivity.
+
+The companion GUI application extends this accessibility to non-technical
+users, providing an intuitive four-tab workflow for the complete classification
+pipeline---from backend configuration and data loading to schema definition
+and results review. This combination of a programmatic library and a graphical
+interface positions \texttt{ollama-classifier} as a practical tool for
+bridging the gap between the capabilities of modern LLMs and the operational
+needs of domain practitioners in fields such as official statistics, economic
+research, and data governance.
+
+Future work will focus on expanding the retrieval-augmented classification
+pipeline within the library, improving confidence calibration through
+temperature scaling and conformal prediction methods, and developing a
+web-based interface to support collaborative, multi-user classification
+workflows.
+
+% =============================================================================
+% References
+% =============================================================================
+\printbibliography
+
+\end{document}
