@@ -433,3 +433,175 @@
             as economists, statisticians, and data officers---to leverage
             state-of-the-art LLM classification without writing code.}
 }
+
+% =============================================================================
+% 8. ADDITIONAL REFERENCES
+% =============================================================================
+
+@software{ollama_python,
+  title        = {Ollama Python Library},
+  author       = {{Ollama Team}},
+  year         = {2023},
+  url          = {https://github.com/ollama/ollama-python},
+  annote       = {The official Python client library that ollama-classifier wraps to interface with the local Ollama server. It handles API communication, enabling the classification library to send prompts and receive structured outputs seamlessly without requiring users to write low-level HTTP calls.}
+}
+
+@article{palumbo2026ollama-classifier,
+  title        = {ollama-classifier: A Python wrapper around the Ollama Python SDK for text classification with constrained output and confidence scoring},
+  author       = {Palumbo, Luigi and Yu, Mengting and Camassa, Carolina},
+  year         = {2026},
+  url          = {https://pypi.org/project/ollama-classifier/},
+  annote       = {The primary research paper describing the ollama-classifier library itself. It details the Python wrapper around the Ollama SDK, focusing on constrained output generation (forcing the LLM to output only valid class labels) and confidence scoring, which are critical for deploying LLMs as reliable classifiers in non-technical GUI environments.}
+}
+
+@article{openai2023gpt4,
+  title        = {GPT-4 Technical Report},
+  author       = {OpenAI},
+  year         = {2023},
+  doi          = {10.48550/arXiv.2303.08774},
+  url          = {https://arxiv.org/abs/2303.08774},
+  annote       = {While ollama-classifier focuses on local, open-source models, GPT-4 serves as the proprietary upper-bound benchmark for zero-shot and few-shot reasoning tasks. It contextualizes the performance trade-offs inherent in using smaller, locally-hosted models via Ollama for privacy and cost-efficiency.}
+}
+
+@article{touvron2023llama,
+  title        = {{LLaMA}: Open and Efficient Foundation Language Models},
+  author       = {Touvron, Hugo and Lavril, Thibaut and Izacard, Gautier and Martinet, Xavier and Lachaux, Marie-Anne and Lacroix, Timothée and Rozière, Baptiste and Gorat, Naman and Hambro, Eric and Azhar, Faisal and others},
+  journal      = {arXiv preprint arXiv:2302.13971},
+  year         = {2023},
+  doi          = {10.48550/arXiv.2302.13971},
+  annote       = {The first iteration of Meta's LLaMA model that catalyzed the open-source LLM movement. By proving that highly capable models can be trained on publicly available data and run locally, LLaMA 1 laid the groundwork for the ecosystem that Ollama and ollama-classifier rely upon.}
+}
+
+@article{wei2022chain,
+  title        = {Chain-of-Thought Prompting Elicits Reasoning in Large Language Models},
+  author       = {Wei, Jason and Wang, Xuezhi and Schuurmans, Dale and Bosma, Maarten and Xia, Fei and Chi, Ed and Le, Quoc V. and Zhou, Denny},
+  journal      = {arXiv preprint arXiv:2201.11903},
+  year         = {2022},
+  doi          = {10.48550/arXiv.2201.11903},
+  annote       = {Introduces Chain-of-Thought (CoT) prompting, demonstrating that LLMs can perform complex reasoning when prompted to generate intermediate steps. Although ollama-classifier uses few-shot retrieval rather than pure CoT, understanding CoT is essential for analyzing how the generative models in the library reason through retrieved exemplars before outputting a classification.}
+}
+
+@article{mu2024prompt,
+  title        = {Navigating Prompt Complexity for Zero-Shot Classification: A Study of Large Language Models in Computational Social Science},
+  author       = {Mu, Yida and Ziebart, Brian},
+  journal      = {arXiv preprint arXiv:2305.14310},
+  year         = {2024},
+  doi          = {10.48550/arXiv.2305.14310},
+  annote       = {Investigates how prompt complexity affects zero-shot classification performance by LLMs. This is directly relevant to ollama-classifier, as the library's effectiveness heavily depends on how well its prompt templates (e.g., classification-by-example vs. classification-by-definition) structure the retrieved context for the LLM.}
+}
+
+@inproceedings{schroeder2025just,
+  title     = {Just Put a Human in the Loop? Investigating {LLM}-Assisted Annotation for Subjective Tasks},
+  author    = {Schroeder, Hope and Roy, Deb and Kabbara, Jad},
+  booktitle = {Findings of the Association for Computational Linguistics: ACL 2025},
+  year      = {2025},
+  pages     = {25771--25795},
+  doi       = {10.18653/v1/2025.findings-acl.1323},
+  url       = {https://aclanthology.org/2025.findings-acl.1323/},
+  annote    = {Examines the efficacy and pitfalls of LLM-assisted annotation. Highly relevant to the planned GUI app for ollama-classifier, as it highlights the necessity of human-in-the-loop designs—aligning perfectly with the library's 'opt-out' mechanism where the model abstains rather than forcing an incorrect label.}
+}
+
+@article{hakimi2026humans,
+  title        = {Do We Still Need Humans in the Loop? Comparing Human and {LLM} Annotation in Active Learning},
+  author       = {Hakimi, Vaishnav and Bowen, Luke and others},
+  journal      = {arXiv preprint arXiv:2601.09346},
+  year         = {2026},
+  doi          = {10.48550/arXiv.2601.09346},
+  annote       = {Compares human annotators with LLMs within an active learning framework. Provides empirical context for the research paper's argument that tools like ollama-classifier should be viewed as assistants that reduce human labeling burden (e.g., via confident auto-labeling and uncertain opt-outs) rather than full replacements for domain experts.}
+}
+
+@article{vasquez2026trust,
+  title        = {When Can We Trust {LLM} Graders? Calibrating Confidence for Automated Assessment},
+  author       = {Vasquez Ferrer, Robinson and Turgut, Damla and others},
+  journal      = {arXiv preprint arXiv:2603.29559},
+  year         = {2026},
+  doi          = {10.48550/arXiv.2603.29559},
+  annote       = {Explores calibrating confidence scores for LLM automated assessment. Directly related to the 'confidence scoring' feature of ollama-classifier, as reliable confidence metrics are essential for the GUI application to triage classifications, automatically accepting high-confidence labels and routing low-confidence ones to human reviewers.}
+}
+
+@article{gallegos2024bias,
+  title        = {Bias and Fairness in Large Language Models: A Survey},
+  author       = {Gallegos, Anderson and others},
+  journal      = {arXiv preprint arXiv:2309.00770},
+  year         = {2024},
+  doi          = {10.48550/arXiv.2309.00770},
+  annote       = {Surveys bias and fairness issues in Large Language Models. Crucial for the limitations section of the research paper, as using LLMs as classifiers via ollama-classifier risks amplifying societal biases present in the pre-training data, which must be acknowledged when classifying economic or demographic data.}
+}
+
+@article{yuan2026biasahead,
+  title        = {Bias Ahead: Sensitive Prompts as Early Warnings for Fairness in Large Language Models},
+  author       = {Yuan, Zhongxiang and others},
+  journal      = {arXiv preprint arXiv:2604.05575},
+  year         = {2026},
+  doi          = {10.48550/arXiv.2604.05575},
+  annote       = {Proposes using sensitive prompts as early warning systems for fairness issues in LLMs. Relevant to the ollama-classifier framework as a potential future diagnostic tool to test whether the retrieval-augmented classification pipeline introduces or mitigates biases when categorizing products across different languages or regions.}
+}
+
+@article{wang2019glue,
+  title        = {{GLUE}: A Multi-Task Benchmark and Analysis Platform for Natural Language Understanding},
+  author       = {Wang, Alex and Singh, Amanpreet and Michael, Julian and Hill, Felix and Levy, Omer and Bowman, Samuel R.},
+  journal      = {arXiv preprint arXiv:1804.07461},
+  year         = {2019},
+  doi          = {10.48550/arXiv.1804.07461},
+  annote       = {Introduces the GLUE benchmark, a standard for evaluating Natural Language Understanding (NLU). While ollama-classifier targets domain-specific taxonomies (like COICOP) rather than general NLU, GLUE provides the historical context for how text classification evaluation has evolved from static benchmarks to dynamic, zero-shot LLM evaluations.}
+}
+
+@software{cvxtz2023llmclassifier,
+  title        = {llmclassifier: Building Reliable Text Classification Pipelines with {LLMs}},
+  author       = {{CVxTz}},
+  year         = {2023},
+  url          = {https://github.com/CVxTz/llmclassifier},
+  annote       = {An open-source Python library designed to build text classification pipelines using LLMs. Represents the competitive landscape and related work for ollama-classifier. Unlike ollama-classifier, which focuses on local inference via Ollama and retrieval augmentation, this library generally targets API-based models, highlighting ollama-classifier's unique value proposition of privacy and offline capability.}
+}
+
+@software{golino2023llmclassificr,
+  title        = {llmClassificR: Toolkit per classificazione testuale con Large Language Models},
+  author       = {Golino, Hudson},
+  year         = {2023},
+  url          = {https://github.com/GoBru/llmClassificR},
+  annote       = {An R package for text classification using LLMs. Serves as cross-language related work, demonstrating that the demand for LLM-based classification tools spans beyond the Python ecosystem. It reinforces the need for ollama-classifier's specialized focus on retrieval-augmented, constrained-generation workflows in Python.}
+}
+
+@article{lescao2022bloom,
+  title        = {{BLOOM}: A 176B-Parameter Open-Access Multilingual Language Model},
+  author       = {Le Scao, Teven and Fan, Angela and Akiki, Christopher and Biderman, Stella and Cao, Hengrui and Delangue, Julien and Drumond, Carlos and Eljarray, Wissam and Genga, Loubna and Gu, Yacine J. and others},
+  journal      = {arXiv preprint arXiv:2211.05100},
+  year         = {2022},
+  doi          = {10.48550/arXiv.2211.05100},
+  annote       = {Presents BLOOM, a massive open-access multilingual language model. BLOOM represents an important milestone in open-source multilingual LLMs, which is highly relevant to ollama-classifier's goal of classifying multilingual product data (e.g., Italian, Maltese, German) without relying on proprietary APIs.}
+}
+
+@misc{weijia2024ollama,
+  title        = {Harnessing Local {LLMs}: Using Ollama to Categorize and Analyze Qualitative Data},
+  author       = {Weijia},
+  year         = {2024},
+  url          = {https://medium.com/@weijiawa/harnessing-local-large-language-models-using-ollama-to-categorize-and-analyze-qualitative-data-35d1975da1e9},
+  annote       = {A practical blog post demonstrating the grassroots use of Ollama for categorizing qualitative data. Useful as anecdotal evidence in the introduction or motivation sections of the paper, showing that practitioners are actively seeking local LLM solutions for classification, which ollama-classifier formalizes into a robust, reusable library.}
+}
+
+@article{wang2024sentiment,
+  title        = {Is {ChatGPT} a Good Sentiment Analyzer? A Preliminary Study},
+  author       = {Wang, Zengzhi and Xie, Qiming and Feng, Yi and Ding, Zixiang and Yang, Zinong and Xia, Rui},
+  journal      = {arXiv preprint arXiv:2304.04339},
+  year         = {2024},
+  doi          = {10.48550/arXiv.2304.04339},
+  annote       = {Evaluates ChatGPT's performance as a sentiment analyzer. While focused on proprietary models, this study is representative of the broader research trend of repurposing generative LLMs as discriminative classifiers—the exact paradigm shift that ollama-classifier operationalizes for local, open-source models.}
+}
+
+@article{chowdhery2022palm,
+  title        = {{PaLM}: Scaling Language Modeling with Pathways},
+  author       = {Chowdhery, Aakanksha and Narang, Sharan and Devlin, Jacob and Bosma, Maarten and Mishra, Gaurav and Roberts, Adam and Barham, Paul and Chung, Hyung Won and Sutton, Charles and Gehrmann, Sebastian and others},
+  journal      = {arXiv preprint arXiv:2204.02311},
+  year         = {2022},
+  doi          = {10.48550/arXiv.2204.02311},
+  annote       = {Details the PaLM model and its scaling properties, showcasing massive improvements in zero-shot task performance. Provides the theoretical scaling context that justifies why modern open-source models (served by Ollama) are now capable enough to replace traditional fine-tuned classifiers in zero-shot retrieval-augmented settings.}
+}
+
+@techreport{radford2019gpt2,
+  title        = {Language Models are Unsupervised Multitask Learners},
+  author       = {Radford, Alec and Wu, Jeff and Child, Rewon and Luan, David and Amodei, Dario and Sutskever, Ilya},
+  institution  = {OpenAI},
+  year         = {2019},
+  url          = {https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf},
+  annote       = {Introduces GPT-2, demonstrating that language models can perform zero-shot task transfer without explicit supervision. This is the foundational paper that initiated the paradigm of using generative models as classifiers, which is the core theoretical premise underlying the ollama-classifier library.}
+}
