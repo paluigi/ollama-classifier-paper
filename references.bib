@@ -435,7 +435,45 @@
 }
 
 % =============================================================================
-% 8. ADDITIONAL REFERENCES
+% 8. ZERO-SHOT CLASSIFICATION BASELINES
+% =============================================================================
+
+@article{lewis2019bart,
+  title        = {{BART}: Denoising Sequence-to-Sequence Pre-training for
+                 Natural Language Generation, Translation, and Comprehension},
+  author       = {Lewis, Mike and Liu, Yinhan and Goyal, Naman and
+                 Ghazvininejad, Marjan and Mohamed, Abdelrahman and
+                 Levy, Omer and Stoyanov, Ves and Zettlemoyer, Luke},
+  journal      = {arXiv preprint arXiv:1910.13461},
+  year         = {2019},
+  url          = {https://arxiv.org/abs/1910.13461},
+  annote       = {Introduces BART, a denoising autoencoder for pre-training
+                 sequence-to-sequence models. BART-large fine-tuned on MNLI
+                 (facebook/bart-large-mnli) serves as the zero-shot
+                 classification baseline in our evaluation, framing
+                 classification as natural language inference.}
+}
+
+@inproceedings{williams2018mnli,
+  title        = {A Broad-Coverage Challenge Corpus for Sentence Understanding
+                 through Inference},
+  author       = {Williams, Adina and Nangia, Nikita and Bowman, Samuel R.},
+  booktitle    = {Proceedings of the 2018 Conference of the North American
+                 Chapter of the Association for Computational Linguistics:
+                 Human Language Technologies},
+  pages        = {1112--1122},
+  year         = {2018},
+  doi          = {10.18653/v1/N18-1101},
+  annote       = {Introduces the Multi-Genre Natural Language Inference (MNLI)
+                 corpus used to fine-tune BART for the zero-shot classification
+                 baseline. The NLI formulation---mapping classification to
+                 textual entailment---is the standard approach for BART-based
+                 zero-shot classification.}
+}
+
+
+% =============================================================================
+% 9. ADDITIONAL REFERENCES
 % =============================================================================
 
 @software{ollama_python,
@@ -463,8 +501,7 @@
   annote       = {While ollama-classifier focuses on local, open-source models, GPT-4 serves as the proprietary upper-bound benchmark for zero-shot and few-shot reasoning tasks. It contextualizes the performance trade-offs inherent in using smaller, locally-hosted models via Ollama for privacy and cost-efficiency.}
 }
 
-@article{touvron2023llama,
-  title        = {{LLaMA}: Open and Efficient Foundation Language Models},
+@article{touvron2023llama1,
   author       = {Touvron, Hugo and Lavril, Thibaut and Izacard, Gautier and Martinet, Xavier and Lachaux, Marie-Anne and Lacroix, Timothée and Rozière, Baptiste and Gorat, Naman and Hambro, Eric and Azhar, Faisal and others},
   journal      = {arXiv preprint arXiv:2302.13971},
   year         = {2023},

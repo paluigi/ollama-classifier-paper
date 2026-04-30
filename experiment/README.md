@@ -15,7 +15,7 @@ Edit the following constants at the top of `experiment.py`:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OLLAMA_HOST` | Ollama server endpoint on your LAN | `http://192.168.178.XX:11434` |
-| `OLLAMA_MODEL` | Model name for ollama-classifier | `qwen2.1:1.5b` |
+| `OLLAMA_MODEL` | Model name for ollama-classifier | `qwen2.5:3b-instruct` |
 | `BART_MODEL` | HuggingFace model for BART baseline | `facebook/bart-large-mnli` |
 
 ## Run
