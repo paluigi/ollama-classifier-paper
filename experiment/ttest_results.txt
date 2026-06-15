@@ -1,0 +1,11 @@
+One-tailed Welch t-tests: confidence Correct vs Incorrect
+H1: mean(confidence | Incorrect) < mean(confidence | Correct)
+========================================================================
+
+             Methodology  N correct  N incorrect  Mean conf (correct)  Mean conf (incorrect)  Mean diff (C-I)  t-statistic  p-value (one-tailed)  Significant (alpha=0.05)
+       BART (names only)        260          377               0.5317                 0.4142           0.1175       8.9269                   0.0                      True
+  BART (names + opt-out)        251          349               0.5086                 0.3922           0.1164       8.7995                   0.0                      True
+     Ollama (names only)        473          164               0.9540                 0.8197           0.1343       8.7623                   0.0                      True
+Ollama (names + opt-out)        458          156               0.9585                 0.8099           0.1486       9.1605                   0.0                      True
+  Ollama (names + desc.)        451          186               0.9556                 0.8035           0.1521       9.9095                   0.0                      True
+Ollama (desc. + opt-out)        440          157               0.9540                 0.8154           0.1387       8.9058                   0.0                      True
