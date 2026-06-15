@@ -9,6 +9,7 @@ dependencies = [
     "ollama-classifier>=0.3.0",
     "openpyxl>=3.1.5",
     "pandas>=3.0.2",
+    "scikit-llm>=0.4.2,<0.5",
     "scipy>=1.17.1",
     "torch>=2.11.0",
     "tqdm>=4.67.3",

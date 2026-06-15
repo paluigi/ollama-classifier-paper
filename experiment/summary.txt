@@ -5,12 +5,14 @@ Dataset:      637 products, 7 subclasses
 ======================================================================
 
                     Variation   N  Accuracy (%)  Precision (macro)  Recall (macro)  F1 (macro) % Classified % Correct (on classified) N Opt-out  N Errors  Time (s)
-            BART (names only) 637          40.8              0.548           0.485       0.445            —                         —         —         0     421.3
-       BART (names + opt-out) 637          39.4              0.549           0.495       0.454         94.2                      41.8        37         0     466.3
-          Ollama (names only) 637          74.3              0.704           0.700       0.689            —                         —         —         0    1814.4
-     Ollama (names + opt-out) 637          71.9              0.683           0.704       0.678         96.4                      74.6        23         0    2043.3
-Ollama (names + descriptions) 637          70.8              0.684           0.704       0.677            —                         —         —         0    1873.0
-      Ollama (desc + opt-out) 637          69.1              0.692           0.719       0.685         93.7                      73.7        40         0    2106.8
+            BART (names only) 637          40.8              0.548           0.485       0.445            —                         —         —         0     520.4
+       BART (names + opt-out) 637          39.4              0.549           0.495       0.454         94.2                      41.8        37         0     610.7
+          Ollama (names only) 637          74.3              0.704           0.700       0.689            —                         —         —         0    2150.7
+     Ollama (names + opt-out) 637          71.9              0.683           0.704       0.678         96.4                      74.6        23         0    2452.6
+Ollama (names + descriptions) 637          70.8              0.684           0.704       0.677            —                         —         —         0    2207.7
+      Ollama (desc + opt-out) 637          69.1              0.692           0.719       0.685         93.7                      73.7        40         0    2486.6
+      scikit-llm (names only) 637          73.5              0.690           0.689       0.667            —                         —         —         2     204.5
+   scikit-llm (names+opt-out) 637          68.0              0.631           0.701       0.651         89.6                      75.8        66         0     199.9
 
 
 --- Per-class metrics: BART (names only) ---
@@ -73,15 +75,37 @@ Ollama (names + descriptions) 637          70.8              0.684           0.7
 01.2.6.0                                     Soft drinks      0.553   0.737 0.632       99
 01.2.9.0                   Other non-alcoholic beverages      0.520   0.271 0.356       48
 
+--- Per-class metrics: scikit-llm (names only) ---
+   Class                                            Name  Precision  Recall    F1  Support
+01.2.1.0                      Fruit and vegetable juices      0.849   0.831 0.840      189
+01.2.2.0                   Coffee and coffee substitutes      0.679   0.960 0.795       99
+01.2.3.0 Tea, maté and other plant products for infusion      0.959   0.740 0.836      127
+01.2.4.0                                    Cocoa drinks      0.727   0.571 0.640       14
+01.2.5.0                                           Water      0.430   0.881 0.578       42
+01.2.6.0                                     Soft drinks      0.778   0.600 0.677      105
+01.2.9.0                   Other non-alcoholic beverages      0.412   0.237 0.301       59
+
+--- Per-class metrics: scikit-llm (names+opt-out) ---
+   Class                                            Name  Precision  Recall    F1  Support
+01.2.1.0                      Fruit and vegetable juices      0.862   0.798 0.829      173
+01.2.2.0                   Coffee and coffee substitutes      0.669   0.989 0.798       94
+01.2.3.0 Tea, maté and other plant products for infusion      0.910   0.856 0.882      118
+01.2.4.0                                    Cocoa drinks      0.727   0.667 0.696       12
+01.2.5.0                                           Water      0.521   0.974 0.679       38
+01.2.6.0                                     Soft drinks      0.727   0.622 0.671       90
+01.2.9.0                   Other non-alcoholic beverages      0.000   0.000 0.000       46
+
 
 ======================================================================
 Confidence Analysis
 ======================================================================
 
                     Variation  N Correct  N Incorrect  Mean Conf (Correct)  Mean Conf (Incorrect)  Corr. Coefficient  Corr. p-value  Mean Score Gap  Median Score Gap
-            BART (names only)        260          377               0.5317                 0.4142             0.3468            0.0          0.4621            0.4376
-       BART (names + opt-out)        251          349               0.5086                 0.3922             0.3513            0.0          0.4409            0.4157
-          Ollama (names only)        473          164               0.9540                 0.8197             0.4023            0.0          0.9194            0.9966
-     Ollama (names + opt-out)        458          156               0.9585                 0.8099             0.4366            0.0          0.9208            0.9976
-Ollama (names + descriptions)        451          186               0.9556                 0.8035             0.4524            0.0          0.9112            0.9960
-      Ollama (desc + opt-out)        440          157               0.9540                 0.8154             0.4224            0.0          0.9176            0.9954
+            BART (names only)        260          377               0.5317                 0.4142             0.3468            0.0          0.2451            0.1829
+       BART (names + opt-out)        251          349               0.5086                 0.3922             0.3513            0.0          0.2279            0.1668
+          Ollama (names only)        473          164               0.9540                 0.8197             0.4023            0.0          0.8615            0.9938
+     Ollama (names + opt-out)        458          156               0.9585                 0.8099             0.4366            0.0          0.8638            0.9959
+Ollama (names + descriptions)        451          186               0.9556                 0.8035             0.4524            0.0          0.8478            0.9933
+      Ollama (desc + opt-out)        440          157               0.9540                 0.8154             0.4224            0.0          0.8605            0.9919
+      scikit-llm (names only)        468          167                  NaN                    NaN                NaN            NaN             NaN               NaN
+   scikit-llm (names+opt-out)        433          138                  NaN                    NaN                NaN            NaN             NaN               NaN

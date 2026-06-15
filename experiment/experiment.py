@@ -37,6 +37,12 @@ OLLAMA_MODEL = "qwen2.5:3b-instruct"
 
 BART_MODEL = "facebook/bart-large-mnli"
 
+# scikit-llm drives the same Ollama backend/model through its OpenAI-compatible
+# endpoint. scikit-llm 0.4.x has no native custom-URL support and hardcodes the
+# OpenAI base URL, so the redirect is applied at runtime in classify_skllm().
+SKLLM_MODEL = OLLAMA_MODEL
+OLLAMA_OPENAI_URL = OLLAMA_HOST.rstrip("/") + "/v1"
+
 DATASET_URL = (
     "https://zenodo.org/records/18459651/files/manual_labels_coicop2018.csv"
     "?download=1"
@@ -165,13 +171,14 @@ def classify_ollama(
         try:
             if method == "classify":
                 result = classifier.classify(text, choices)
-                scores = (
-                    result.scores if hasattr(result, "scores") else {}
-                )
+                # ClassificationResult exposes the per-choice distribution via
+                # `probabilities` (NOT `scores`); read it directly so a future
+                # API drift surfaces immediately instead of silently defaulting
+                # to an empty dict.
                 results.append({
                     "label": result.prediction,
                     "confidence": result.confidence,
-                    "probabilities": scores,
+                    "probabilities": result.probabilities,
                 })
             elif method == "generate":
                 label = classifier.generate(text, choices)
@@ -187,6 +194,45 @@ def classify_ollama(
             results.append({"label": "ERROR", "confidence": None, "probabilities": {}})
 
     return results
+
+
+# =============================================================================
+# scikit-llm (ZeroShotGPTClassifier) — same Ollama backend via OpenAI-compat API
+# =============================================================================
+
+def classify_skllm(
+    texts: list[str],
+    candidate_labels: list[str],
+    use_opt_out: bool = False,
+) -> list[dict]:
+    import openai
+    import skllm.openai.chatgpt as _skllm_chatgpt
+    from skllm.config import SKLLMConfig
+    from skllm.models.gpt.gpt_zero_shot_clf import ZeroShotGPTClassifier
+
+    # scikit-llm 0.4.x hardcodes openai.api_base to the OpenAI endpoint inside
+    # set_credentials(); redirect it to Ollama's OpenAI-compatible endpoint.
+    def _ollama_credentials(key: str, org: str) -> None:
+        openai.api_key = key
+        openai.organization = org
+        openai.api_type = "open_ai"
+        openai.api_version = None
+        openai.api_base = OLLAMA_OPENAI_URL
+
+    _skllm_chatgpt.set_credentials = _ollama_credentials
+    SKLLMConfig.set_openai_key("ollama")  # dummy key; Ollama ignores it
+
+    default_label = OPT_OUT_LABEL if use_opt_out else "ERROR"
+    labels = list(candidate_labels) + ([OPT_OUT_LABEL] if use_opt_out else [])
+
+    clf = ZeroShotGPTClassifier(
+        openai_model=SKLLM_MODEL,
+        default_label=default_label,
+    )
+    clf.fit(texts, labels)
+
+    preds = clf.predict(texts)
+    return [{"label": str(p), "confidence": None, "probabilities": {}} for p in preds]
 
 
 # =============================================================================
@@ -320,13 +366,25 @@ def compute_macro_metrics(
 # Confidence analysis
 # =============================================================================
 
+def _score_gap_from_probs(probs: dict) -> float | None:
+    """Margin of victory between the top and second-highest class probabilities.
+
+    Standard uncertainty/margin metric: the gap between the most probable label
+    and its nearest competitor. Returns None when fewer than two scored
+    candidates are present (the margin is undefined).
+    """
+    if not isinstance(probs, dict) or len(probs) < 2:
+        return None
+    values = sorted((float(v) for v in probs.values()), reverse=True)
+    return round(values[0] - values[1], 4)
+
+
 def compute_confidence_analysis(
     gt: pd.Series,
     pred: pd.Series,
     confidences: pd.Series,
     probs_json: pd.Series,
     has_opt_out: bool,
-    name_to_code: dict[str, str],
 ) -> dict:
     if has_opt_out:
         valid_mask = ~pred.isin([OPT_OUT_LABEL, "ERROR"])
@@ -371,14 +429,14 @@ def compute_confidence_analysis(
         corr_coeff = None
         corr_pval = None
 
+    # Score gap = margin of victory (top probability minus second-highest),
+    # evaluated over incorrect predictions only.
     gaps = []
     for idx in incorrect_mask.index:
-        gt_code = gt_v.loc[idx]
-        gt_name = name_to_code.get(gt_code, gt_code)
         probs = json.loads(probs_v.loc[idx]) if pd.notna(probs_v.loc[idx]) else {}
-        conf_pred = float(conf_v.loc[idx]) if pd.notna(conf_v.loc[idx]) else 0.0
-        conf_correct = float(probs.get(gt_name, 0.0))
-        gaps.append(conf_pred - conf_correct)
+        gap = _score_gap_from_probs(probs)
+        if gap is not None:
+            gaps.append(gap)
 
     if gaps:
         mean_gap = round(float(sum(gaps) / len(gaps)), 4)
@@ -429,7 +487,7 @@ def build_confidence_detail(
         probs = json.loads(probs_v.loc[idx]) if pd.notna(probs_v.loc[idx]) else {}
         prob_correct = float(probs.get(gt_name, 0.0))
         is_correct = pred_code == gt_code
-        score_gap = (conf - prob_correct) if (conf is not None) else None
+        score_gap = _score_gap_from_probs(probs)
 
         rows.append({
             "text": texts_v.loc[idx],
@@ -523,6 +581,19 @@ def main():
             "method": "classify",
             "use_opt_out": True,
         },
+        {
+            "name": "scikit-llm (names only)",
+            "has_opt_out": False,
+            "classifier": "skllm",
+            "choices": names_only,
+        },
+        {
+            "name": "scikit-llm (names+opt-out)",
+            "has_opt_out": True,
+            "classifier": "skllm",
+            "choices": names_only,
+            "use_opt_out": True,
+        },
     ]
 
     for var in variations:
@@ -531,6 +602,12 @@ def main():
 
         if var["classifier"] == "bart":
             results = classify_bart(texts, var["choices"])
+        elif var["classifier"] == "skllm":
+            results = classify_skllm(
+                texts,
+                var["choices"],
+                use_opt_out=var.get("use_opt_out", False),
+            )
         else:
             results = classify_ollama(
                 texts,
@@ -574,7 +651,6 @@ def main():
             results_df[f"{col_key}_conf"],
             results_df[f"{col_key}_probs"],
             has_opt_out=var["has_opt_out"],
-            name_to_code=name_to_code,
         )
         conf_analysis["Variation"] = var["name"]
         conf_analyses[var["name"]] = conf_analysis

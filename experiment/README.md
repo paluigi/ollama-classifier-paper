@@ -1,11 +1,11 @@
-# Experiment: BART vs ollama-classifier Benchmark
+# Experiment: BART vs ollama-classifier vs scikit-llm Benchmark
 
 Zero-shot classification comparison on COICOP 2018 Division 01.2 (Non-alcoholic beverages).
 
 ## Setup
 
 ```bash
-pip install pandas openpyxl transformers torch ollama ollama-classifier tqdm
+uv add pandas openpyxl transformers torch ollama ollama-classifier scikit-llm tqdm
 ```
 
 ## Configuration
@@ -17,6 +17,12 @@ Edit the following constants at the top of `experiment.py`:
 | `OLLAMA_HOST` | Ollama server endpoint on your LAN | `http://192.168.178.XX:11434` |
 | `OLLAMA_MODEL` | Model name for ollama-classifier | `qwen2.5:3b-instruct` |
 | `BART_MODEL` | HuggingFace model for BART baseline | `facebook/bart-large-mnli` |
+| `SKLLM_MODEL` | Model for scikit-llm (reuses `OLLAMA_MODEL`) | `qwen2.5:3b-instruct` |
+
+scikit-llm drives the same Ollama backend/model through Ollama's
+OpenAI-compatible endpoint (`OLLAMA_HOST/v1`); no separate model server is
+required. scikit-llm is a label-only classifier, so its variations report no
+confidence/probability scores.
 
 ## Run
 
@@ -25,7 +31,7 @@ cd experiment
 python experiment.py
 ```
 
-## Six Variations
+## Variations
 
 | # | Method | Labels | Opt-out |
 |---|--------|--------|---------|
@@ -35,6 +41,8 @@ python experiment.py
 | 4 | ollama-classifier | Names only | Yes |
 | 5 | ollama-classifier | Names + descriptions | No |
 | 6 | ollama-classifier | Names + descriptions | Yes |
+| 7 | scikit-llm | Names only | No |
+| 8 | scikit-llm | Names only | Yes |
 
 ## Outputs
 
