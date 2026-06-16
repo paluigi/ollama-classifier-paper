@@ -25,6 +25,11 @@
 \usepackage[style=apa,backend=biber,natbib=true]{biblatex}
 \addbibresource{references.bib}
 
+% Suppress internal annote fields from bibliography display
+\AtEveryBibitem{%
+  \clearfield{annote}%
+}
+
 % ---------- Hyperref setup ----------
 \hypersetup{
   colorlinks=true,
@@ -228,6 +233,14 @@ labels, (iii) implementing confidence scoring through multi-call softmax
 evaluation, and (iv) offering a dedicated GUI application for non-technical
 users---features not found together in any existing library.
 
+To extend the \texttt{ollama-classifier} ecosystem beyond Python, we developed
+\texttt{rollama-classifier}~\citep{rollama-classifier}, a native R package
+that ports the library's constrained-output classification and multi-backend
+support to the R environment. This enables R users---particularly in
+statistical offices, government agencies, and academic research---to leverage
+the same LLM-based classification capabilities without leaving their preferred
+analysis environment.
+
 % =============================================================================
 \section{Background}
 \label{sec:background}
@@ -308,7 +321,8 @@ Table~\ref{tab:api}.
 \begin{table}[htbp]
   \centering
   \caption{Core methods of the \texttt{ollama-classifier} API. Each method
-           has an asynchronous counterpart prefixed with \texttt{a}.}
+           has an asynchronous counterpart prefixed with \texttt{a}
+           (e.g., \texttt{agenerate}, \texttt{aclassify}).}
   \label{tab:api}
   \begin{tabular}{lp{8cm}}
     \toprule
@@ -316,13 +330,10 @@ Table~\ref{tab:api}.
     \midrule
     \texttt{generate()} & Constrained output only; returns the predicted label
                           without confidence scores (fastest method). \\
-    \texttt{score()}    & Multi-call evaluation with softmax; makes $N$ API
-                          calls for $N$ choices to compute calibrated
-                          probabilities. \\
-    \texttt{classify()} & Full classification with confidence scores; combines
-                          generation with probability estimation. \\
+    \texttt{classify()} & Full classification with confidence scores; makes
+                          $N$ API calls for $N$ choices to compute calibrated
+                          probabilities via softmax. \\
     \texttt{batch\_generate()} & Batch constrained output for multiple texts. \\
-    \texttt{batch\_score()}    & Batch scoring for multiple texts. \\
     \texttt{batch\_classify()} & Batch classification with confidence scores. \\
     \bottomrule
   \end{tabular}
@@ -330,7 +341,7 @@ Table~\ref{tab:api}.
 
 \subsection{Classification Strategies}
 
-\texttt{ollama-classifier} supports three classification strategies, each
+\texttt{ollama-classifier} supports two classification strategies, each
 offering a different trade-off between speed and confidence calibration:
 
 \begin{enumerate}[leftmargin=*]
@@ -339,22 +350,17 @@ offering a different trade-off between speed and confidence calibration:
         predicted label. This is the fastest strategy, suitable when speed is
         critical and confidence estimation is not required.
 
-  \item \textbf{Multi-call scoring} (\texttt{score}): The model evaluates each
-        candidate label independently through $N$ separate API calls, producing
-        raw log-probability scores. These scores are then normalized using a
-        softmax function to produce a calibrated probability distribution over
-        all classes:
+  \item \textbf{Full classification} (\texttt{classify}): Makes $N$ separate API
+        calls for $N$ candidate labels, computing raw log-probability scores
+        that are normalized using a softmax function to produce a calibrated
+        probability distribution over all classes:
         \[
           \text{P}(y_i \mid x) = \frac{\exp(s_i)}{\sum_{j=1}^{N} \exp(s_j)},
         \]
         where $s_i$ is the log-probability score for class $y_i$ and $N$ is the
-        number of candidate classes.
-
-  \item \textbf{Full classification} (\texttt{classify}): Combines constrained
-        generation with confidence scoring, returning both the predicted label
-        and the probability distribution over all candidates. This strategy
-        is recommended for applications that require both a prediction and a
-        measure of certainty for triage purposes.
+        number of candidate classes. Returns both the predicted label and the
+        full probability distribution, recommended for applications requiring
+        both a prediction and a measure of certainty for triage purposes.
 \end{enumerate}
 
 \subsection{Constrained Output Generation}
@@ -908,7 +914,9 @@ that enables zero-shot and few-shot text classification using locally-hosted
 Large Language Models. The library provides constrained output generation,
 confidence scoring, batch processing, and multi-backend support, making
 advanced LLM-based classification accessible without fine-tuning, API keys,
-or internet connectivity.
+or internet connectivity. An R port, \texttt{rollama-classifier}%
+~\citep{rollama-classifier}, further extends this accessibility to the R
+community.
 
 The companion GUI application extends this accessibility to non-technical
 users, providing an intuitive four-tab workflow for the complete classification
