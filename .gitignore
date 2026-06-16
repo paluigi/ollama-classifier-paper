@@ -1,3 +1,9 @@
+# Python
+__pycache__/
+
+# Agent working state
+.kilo/
+
 # LaTeX build artifacts
 *.aux
 *.log

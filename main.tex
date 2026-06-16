@@ -11,6 +11,7 @@
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{booktabs}
 \usepackage{graphicx}
+\graphicspath{{experiment/}}
 \usepackage{hyperref}
 \usepackage{xcolor}
 \usepackage{listings}
@@ -75,10 +76,14 @@
   backends (Ollama, vLLM, SGLang, llama.cpp), making LLM-based classification
   accessible without fine-tuning, API keys, or internet connectivity.
   A companion desktop GUI built with Flet allows non-technical users to leverage
-  retrieval-augmented classification through an intuitive workflow.
-  We benchmark the library against BART-large-MNLI on a COICOP product
-  classification task, demonstrating that a compact 3B-parameter model served
-  locally substantially outperforms the NLI-based baseline.
+  retrieval-augmented classification through an intuitive workflow; the
+  application is publicly released as \texttt{ollama-classifier-gui} on GitHub
+  and the Python Package Index (PyPI).
+  We benchmark the library against BART-large-MNLI and scikit-llm on a COICOP
+  product classification task, demonstrating that a compact 3B-parameter model
+  served locally substantially outperforms the NLI-based baseline and matches
+  scikit-llm in accuracy while additionally providing calibrated confidence
+  scores that reliably discriminate correct from incorrect predictions.
 \end{abstract}
 
 \noindent\textbf{Keywords:} zero-shot classification, large language models,
@@ -152,7 +157,8 @@ architecture and API.
 Section~\ref{sec:gui} introduces the companion GUI application.
 Section~\ref{sec:application} illustrates a real-world application to product
 classification and presents a benchmark evaluation comparing
-\texttt{ollama-classifier} against a BART-large-MNLI zero-shot baseline.
+\texttt{ollama-classifier} against a BART-large-MNLI zero-shot baseline and
+the scikit-llm library.
 Section~\ref{sec:discussion} discusses design decisions and limitations, and
 Section~\ref{sec:conclusion} concludes with directions for future work.
 
@@ -207,7 +213,13 @@ Several open-source projects address LLM-based text classification.
 framework for building classification pipelines with LLMs, but targets API-based
 models and does not support local inference. \texttt{llmClassificR}
 \citep{golino2023llmclassificr} offers similar functionality in R, again
-relying on cloud-hosted models.
+relying on cloud-hosted models. \texttt{scikit-llm} \citep{ScikitLLM} provides a
+scikit-learn-compatible interface for zero-shot and few-shot classification with
+LLMs and can be directed at a local model server through an OpenAI-compatible
+endpoint. Unlike \texttt{ollama-classifier}, scikit-llm is a label-only
+classifier: it returns the predicted class but does not expose calibrated
+confidence scores or a full probability distribution over the candidate labels,
+limiting its use for uncertainty-aware triage workflows.
 
 \texttt{ollama-classifier} differentiates itself by (i) focusing exclusively on
 local inference through Ollama and compatible backends, (ii) providing
@@ -422,7 +434,13 @@ To address this challenge, we developed \texttt{ollama-classifier-gui}, a
 companion desktop application that provides a point-and-click interface for
 the full classification workflow. The application is built with Flet, a
 Python UI framework that enables cross-platform desktop applications from a
-single codebase.
+single codebase. The application is publicly released as open-source
+software: the source code is hosted on
+GitHub,\footnote{\url{https://github.com/paluugi/ollama-classifier-gui}} and
+the package is distributed through the Python Package Index
+(PyPI),\footnote{\url{https://pypi.org/project/ollama-classifier-gui/}}
+where it can be installed directly with
+\texttt{pip\ install\ ollama-classifier-gui} \citep{ollama-classifier-gui}.
 
 \subsection{Architecture}
 
@@ -565,11 +583,24 @@ constrained output generation with multi-call confidence scoring to produce
 both a predicted label and calibrated probability estimates over all
 candidate classes.
 
-We evaluate six variations: two for BART (names only, names with opt-out) and
+The second baseline is scikit-llm \citep{ScikitLLM}, a zero-shot classifier
+with a scikit-learn-compatible interface. We use its
+\texttt{ZeroShotGPTClassifier} configured to issue requests against the same
+locally-hosted Qwen2.5 3B-Instruct model, redirected to Ollama through its
+OpenAI-compatible (\texttt{/v1}) endpoint.
+This ensures that all three classifiers operate on identical input data and
+share the same underlying language model, isolating the effect of the
+classification strategy. Unlike \texttt{ollama-classifier}, scikit-llm is a
+label-only classifier: it returns the predicted class but does not expose
+calibrated confidence scores or a full probability distribution over the
+candidate classes.
+
+We evaluate eight variations: two for BART (names only, names with opt-out),
 four for \texttt{ollama-classifier} (names only, names with opt-out, names with
-definitions, names with definitions and opt-out). This design allows us to
-isolate the effects of (i) the underlying model, (ii) the opt-out mechanism,
-and (iii) the inclusion of subclass definitions as additional context.
+definitions, names with definitions and opt-out), and two for scikit-llm (names
+only, names with opt-out). This design allows us to isolate the effects of
+(i) the underlying model, (ii) the opt-out mechanism, and (iii) the inclusion
+of subclass definitions as additional context.
 
 We report overall accuracy, macro-averaged precision, recall, and F1-score,
 the percentage of items classified (excluding opt-outs), accuracy on classified
@@ -577,7 +608,7 @@ items only, and wall-clock processing time.
 
 \subsubsection{Results}
 
-Table~\ref{tab:benchmark} summarizes the results across all six variations.
+Table~\ref{tab:benchmark} summarizes the results across all eight variations.
 
 \begin{table}[htbp]
   \centering
@@ -585,9 +616,12 @@ Table~\ref{tab:benchmark} summarizes the results across all six variations.
            (637 products, 7 subclasses). BART uses NLI-based zero-shot
            classification \citep{lewis2019bart}; Ollama uses the
            \texttt{classify} method (constrained generation with multi-call
-           confidence scoring) with Qwen2.5 3B-Instruct \citep{yang2024qwen2}.
+           confidence scoring) with Qwen2.5 3B-Instruct \citep{yang2024qwen2};
+           scikit-llm \citep{ScikitLLM} uses \texttt{ZeroShotGPTClassifier}
+           against the same model through Ollama's OpenAI-compatible endpoint.
            Macro-averaged metrics are computed over the seven subclasses.
-           Wall-clock time is reported in seconds.}
+           ``Classif.'' is the percentage of items assigned a class label
+           (i.e., excluding opt-outs). Wall-clock time is reported in seconds.}
   \label{tab:benchmark}
   \begin{tabular}{lcccccc}
     \toprule
@@ -595,13 +629,16 @@ Table~\ref{tab:benchmark} summarizes the results across all six variations.
     & \textbf{F1} & \textbf{Classif.} & \textbf{Time} \\
     & (\%) & (macro) & (macro) & (macro) & (\%) & (s) \\
     \midrule
-    BART (names only)         & 40.8 & 0.548 & 0.485 & 0.445 & ---   & 421.3 \\
-    BART (names + opt-out)    & 39.4 & 0.549 & 0.495 & 0.454 & 94.2  & 466.3 \\
+    BART (names only)            & 40.8 & 0.548 & 0.485 & 0.445 & ---   & 520.4 \\
+    BART (names + opt-out)       & 39.4 & 0.549 & 0.495 & 0.454 & 94.2  & 610.7 \\
     \addlinespace
-    Ollama (names only)       & 74.3 & 0.704 & 0.700 & 0.689 & ---   & 1814.4 \\
-    Ollama (names + opt-out)  & 71.9 & 0.683 & 0.704 & 0.678 & 96.4  & 2043.3 \\
-    Ollama (names + desc.)    & 70.8 & 0.684 & 0.704 & 0.677 & ---   & 1873.0 \\
-    Ollama (desc. + opt-out)  & 69.1 & 0.692 & 0.719 & 0.685 & 93.7  & 2106.8 \\
+    Ollama (names only)          & 74.3 & 0.704 & 0.700 & 0.689 & ---   & 2150.7 \\
+    Ollama (names + opt-out)     & 71.9 & 0.683 & 0.704 & 0.678 & 96.4  & 2452.6 \\
+    Ollama (names + desc.)       & 70.8 & 0.684 & 0.704 & 0.677 & ---   & 2207.7 \\
+    Ollama (desc. + opt-out)     & 69.1 & 0.692 & 0.719 & 0.685 & 93.7  & 2486.6 \\
+    \addlinespace
+    scikit-llm (names only)      & 73.5 & 0.690 & 0.689 & 0.667 & ---   & 204.5 \\
+    scikit-llm (names + opt-out) & 68.0 & 0.631 & 0.701 & 0.651 & 89.6  & 199.9 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -610,19 +647,32 @@ Table~\ref{tab:benchmark} summarizes the results across all six variations.
 \texttt{ollama-classifier} with Qwen2.5 3B-Instruct substantially outperforms
 BART-large-MNLI across all configurations. The best Ollama variation (names
 only, no opt-out) achieves 74.3\% overall accuracy compared to 40.8\% for the
-best BART variation, representing a 33.5 percentage-point improvement. This
-gap is consistent across opt-out configurations, indicating that the advantage
-stems from the generative model's superior ability to reason over fine-grained
-semantic distinctions rather than from the opt-out mechanism itself.
+best BART variation, representing a 33.5 percentage-point improvement.
+scikit-llm, which drives the same Qwen2.5 3B-Instruct model through a single
+constrained-generation call rather than multi-call scoring, achieves 73.5\%
+accuracy---within one percentage point of \texttt{ollama-classifier}. This
+confirms that the generative model's advantage over the NLI baseline stems from
+its superior ability to reason over fine-grained semantic distinctions rather
+than from the scoring protocol. The comparable accuracy of scikit-llm, however,
+comes at the cost of discarding confidence information: because it returns only
+the predicted label, the probability-based triage strategies analyzed below are
+inapplicable to it. In terms of runtime, scikit-llm is the fastest classifier
+($\approx$200\,s, roughly $10\times$ faster than the multi-call Ollama
+variations at $\approx$2150--2490\,s), reflecting its single-call design, while
+BART runs on CPU at $\approx$520--610\,s.
 
 \textbf{Opt-out behavior.}
 When the opt-out option is enabled, BART opts out of 37 products (5.8\%),
-while Ollama opts out of 23 products (3.6\%). Among classified items,
-Ollama's accuracy rises from 74.3\% to 74.6\% with opt-out enabled, suggesting
-that the model correctly identifies its least-confident predictions. BART's
-accuracy on classified items similarly improves from 40.8\% to 41.8\%, but the
-magnitude of improvement is far smaller, consistent with BART's lower overall
-discriminative capability.
+Ollama opts out of 23 products (3.6\%), and scikit-llm opts out of 66 products
+(10.4\%). Among classified items, Ollama's accuracy rises from 74.3\% to
+74.6\% with opt-out enabled, and scikit-llm's rises from 73.5\% to 75.8\%,
+suggesting that the generative models correctly identify their least-confident
+predictions. BART's accuracy on classified items similarly improves from
+40.8\% to 41.8\%, but the magnitude of improvement is far smaller, consistent
+with BART's lower overall discriminative capability. scikit-llm's more
+aggressive abstention---nearly three times Ollama's opt-out rate---reduces its
+overall accuracy to 68.0\% but yields the highest on-classified accuracy of the
+three classifiers.
 
 \textbf{Effect of subclass definitions.}
 Including official COICOP definitions alongside subclass names does not improve
@@ -639,12 +689,20 @@ is most beneficial at higher COICOP levels where class boundaries are less
 clear.
 
 \textbf{Confidence and calibration.}
+Because scikit-llm returns only the predicted label, the following analysis
+covers the six confidence-bearing variations of BART and
+\texttt{ollama-classifier}.
 Table~\ref{tab:confidence} summarizes the relationship between classifier
-confidence and prediction correctness across all six variations. Both models
-exhibit a statistically significant positive correlation between the confidence
-score assigned to the predicted label and whether the prediction is correct
-(all $p < 0.001$). BART's Pearson correlation coefficients range from $r =
-0.347$ to $r = 0.351$, while Ollama's range from $r = 0.402$ to $r = 0.452$.
+confidence and prediction correctness. Both models exhibit a statistically
+significant positive correlation between the confidence score assigned to the
+predicted label and whether the prediction is correct. BART's Pearson
+correlation coefficients range from $r = 0.347$ to $r = 0.351$, while Ollama's
+range from $r = 0.402$ to $r = 0.452$ (all $p < 0.001$). As a stronger,
+directional test, one-tailed Welch's $t$-tests confirm that incorrect
+predictions carry significantly lower mean confidence than correct ones in every
+variation ($t = 8.76$--$9.91$, all $p < 0.001$). Together, the correlations and
+$t$-tests establish that confidence discriminates correctness rather than being
+merely a monotonic artifact of the score distribution.
 
 The two models differ markedly in their confidence distributions. Ollama's mean
 confidence for correct predictions is 0.954--0.959 across variations, compared
@@ -654,16 +712,71 @@ to 0.509--0.532 for BART. Notably, Ollama's mean confidence for
 estimates are compressed into a narrow high-confidence band, making absolute
 threshold-based triage less effective.
 
-The mean score gap---the difference between the highest and second-highest class
-probabilities---further illuminates this pattern. For Ollama, the mean gap on
-incorrect predictions is 0.91--0.92, indicating that the model strongly prefers
-the wrong label over the correct one. BART's gap on incorrect predictions is
-0.44--0.46, reflecting a more diffuse probability distribution where the model
-is less decisive. These findings suggest that confidence thresholds are
-informative for both models, but finer-grained triage strategies---such as
-examining the score gap or the probability assigned to the ground-truth
-class---may be more effective for Ollama than a simple threshold on the
-predicted label's confidence.
+The mean score gap---the difference between the two highest class
+probabilities---further illuminates this pattern. For Ollama, the mean
+gap on incorrect predictions is 0.85--0.86 (median $\approx 0.99$), showing a
+strong preference for the wrong label over the correct one. BART's gap on
+incorrect predictions is 0.23--0.25, reflecting a more diffuse probability
+distribution where the model is less decisive. These findings suggest that
+confidence thresholds are informative for both models, but finer-grained triage
+strategies---such as examining the score gap or the probability assigned to the
+ground-truth class---may be more effective for Ollama than a simple threshold on
+the predicted label's confidence.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{confidence_boxplots}
+  \caption{Distribution of predicted-label confidence for correct versus
+  incorrect predictions across the six confidence-bearing variations. For both
+  models, incorrect predictions concentrate at lower confidence, but Ollama's
+  distributions are compressed in a high-confidence band (median $\geq 0.95$
+  even for most incorrect cases).}
+  \label{fig:boxplots}
+\end{figure}
+
+Figure~\ref{fig:boxplots} visualizes the confidence distributions underlying
+these statistics. The compression of Ollama's probabilities is immediately
+apparent: even its incorrect predictions typically carry confidence above
+0.80, overlapping with BART's \emph{correct} predictions. This compression
+limits the granularity of absolute thresholding for Ollama, whereas BART's
+broader, better-separated distributions make a single confidence cutoff a more
+effective triage signal.
+
+The accuracy--coverage trade-off implied by thresholding is quantified in
+Figure~\ref{fig:tradeoff}. The selective-accuracy curves (left) show that, for
+both models, restricting to high-confidence predictions raises accuracy as the
+threshold increases; the coverage curves (right) show the corresponding
+fraction of items retained. BART offers a smoother trade-off, steadily gaining
+accuracy as coverage falls. Ollama's accuracy also rises with the threshold,
+but because its confidence is concentrated above 0.9, large gains in selective
+accuracy are achieved only by sacrificing substantial coverage. For practical
+deployment, this means that ranking items by confidence (or by score gap) and
+reviewing the lowest-ranked tail is more effective for Ollama than applying a
+hard probability cutoff.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{subfigure}{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{selective_accuracy}
+    \caption{Selective accuracy: accuracy among items whose confidence meets or
+    exceeds the threshold.}
+    \label{fig:selective-accuracy}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{coverage_curve}
+    \caption{Coverage: fraction of items retained at each confidence
+    threshold.}
+    \label{fig:coverage}
+  \end{subfigure}
+  \caption{Accuracy--coverage trade-off under confidence thresholding. BART
+  exhibits a smoother, better-separated trade-off; Ollama's high-confidence
+  compression means coverage remains high until thresholds approach 0.9, so
+  ranking-based triage outperforms hard cutoffs.}
+  \label{fig:tradeoff}
+\end{figure}
 
 \begin{table}[htbp]
   \centering
@@ -673,22 +786,25 @@ predicted label's confidence.
            respectively. ``Corr.~$r$'' is the Pearson correlation between
            predicted-label confidence and correctness. ``Score gap'' is the
            mean difference between the highest and second-highest class
-           probabilities.}
+           probabilities. ``Welch $t$'' is the one-tailed Welch's $t$-statistic
+           testing whether incorrect predictions have lower mean confidence than
+           correct ones (all $p < 0.001$). scikit-llm is omitted because it is
+           a label-only classifier that does not produce confidence scores.}
   \label{tab:confidence}
-  \begin{tabular}{lcccc}
+  \begin{tabular}{lccccc}
     \toprule
     \textbf{Variation} & \textbf{Conf.} & \textbf{Conf.} & \textbf{Corr.}
-    & \textbf{Score} \\
+    & \textbf{Score} & \textbf{Welch} \\
     & \textbf{(correct)} & \textbf{(incorrect)} & $\boldsymbol{r}$
-    & \textbf{gap} \\
+    & \textbf{gap} & $\boldsymbol{t}$ \\
     \midrule
-    BART (names only)         & 0.532 & 0.414 & 0.347 & 0.462 \\
-    BART (names + opt-out)    & 0.509 & 0.392 & 0.351 & 0.441 \\
+    BART (names only)         & 0.532 & 0.414 & 0.347 & 0.245 & 8.93 \\
+    BART (names + opt-out)    & 0.509 & 0.392 & 0.351 & 0.228 & 8.80 \\
     \addlinespace
-    Ollama (names only)       & 0.954 & 0.820 & 0.402 & 0.919 \\
-    Ollama (names + opt-out)  & 0.959 & 0.810 & 0.437 & 0.921 \\
-    Ollama (names + desc.)    & 0.956 & 0.804 & 0.452 & 0.911 \\
-    Ollama (desc. + opt-out)  & 0.954 & 0.815 & 0.422 & 0.918 \\
+    Ollama (names only)       & 0.954 & 0.820 & 0.402 & 0.862 & 8.76 \\
+    Ollama (names + opt-out)  & 0.959 & 0.810 & 0.437 & 0.864 & 9.16 \\
+    Ollama (names + desc.)    & 0.956 & 0.804 & 0.452 & 0.848 & 9.91 \\
+    Ollama (desc. + opt-out)  & 0.954 & 0.815 & 0.422 & 0.861 & 8.91 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -702,7 +818,12 @@ constrained output generation mechanism ensures that all predictions are valid
 class labels, eliminating the post-processing required by unconstrained LLM
 outputs. The opt-out mechanism provides a principled way to flag uncertain
 predictions for human review, a critical feature for production deployment in
-official statistics.
+official statistics. Crucially, the calibrated confidence scores are what
+distinguish \texttt{ollama-classifier} from a faster label-only classifier such
+as scikit-llm: although scikit-llm matches the generative model's accuracy at a
+fraction of the runtime, the absence of confidence information precludes the
+selective-accuracy triage shown in Figure~\ref{fig:tradeoff}, which lets
+analysts trade coverage for precision automatically.
 
 \subsubsection{Limitations of the Evaluation}
 
@@ -713,7 +834,11 @@ class boundaries are more ambiguous. We evaluate a single Ollama model
 models may fall below the observed threshold. The BART baseline uses CPU
 inference, and GPU acceleration could narrow the runtime gap. Finally, we do
 not include a fine-tuned classifier baseline; such a comparison would require
-task-specific training data and is left to future work.
+task-specific training data and is left to future work. Additionally, the
+scikit-llm comparison is confined to accuracy and opt-out behavior: because it
+is a label-only classifier, it could not be included in the confidence and
+calibration analysis, so the relative calibration of its predictions remains
+unassessed.
 
 % =============================================================================
 \section{Discussion}
