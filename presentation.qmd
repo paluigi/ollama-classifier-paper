@@ -2,17 +2,19 @@
 title: "Zero-Shot Text Classification with Locally-Hosted LLMs"
 subtitle: "The `ollama-classifier` Library"
 author:
-  - "Luigi Palumbo\\newline Bank of Italy"
-  - "Mengting Yu\\newline Università degli Studi della Tuscia"
-date: "\\today"
+  - "Luigi Palumbo"
+  - "Mengting Yu"
+date: "July 14, 2026"
 format:
   pptx:
     aspectratio: 169
   beamer:
-    theme: metropolis
+    theme: Madrid
     aspectratio: 169
     colortheme: seahorse
     fontsize: 10pt
+    latex-auto-install: false
+    pdf-engine: xelatex
 execute:
   echo: false
   warning: false
@@ -64,12 +66,18 @@ Each method has an **async** twin (`aclassify`, `agenerate`, …).
 
 ## Confidence Estimation — `classify`
 
-For each candidate label $y_i$, the backend returns per-token log-probabilities of
-that label's tokens $T_i$ given the prompt:
+For each candidate label **yᵢ**, the backend returns per-token log-probabilities
+of that label's tokens **Tᵢ** given the prompt:
 
-$$s(y_i)=\frac{1}{|T_i|}\sum_{t\in T_i}\log p(t\mid x,\text{prefix}_t)$$
+**Label score** (geometric mean of per-token log-probs):
 
-$$\text{P}(y_i\mid x)=\frac{\exp(s(y_i))}{\sum_{j}\exp(s(y_j))}, \qquad \text{confidence}=\max_i \text{P}(y_i\mid x)$$
+`s(y_i) = (1 / |T_i|) · Σ log p(t | x, prefix_t)`
+
+**Calibrated distribution** (max-subtracted softmax):
+
+`P(y_i | x) = exp(s(y_i)) / Σ_j exp(s(y_j))`
+
+`confidence = max_i P(y_i | x)`
 
 - **Geometric mean** of per-token log-probabilities → removes length bias
 - **Max-subtracted softmax** → calibrated distribution
@@ -123,8 +131,8 @@ batch twins, and `classification_result` object. Installs from GitHub:
 `pak::pak("paluigi/rollama-classifier")`
 
 **Rust: `ollama-classifier-rs`** — mirrors Python API (four backends, `classify`/`generate`,
-`ClassificationResult` struct, sync/async/batch). Tracking Python v0.4.1.
-Added with `ollama-classifier-rs = "0.4"` in `Cargo.toml`.
+`ClassificationResult` struct, sync/async/batch). 
+Added with `ollama-classifier-rs = "0.5"` in `Cargo.toml`.
 
 # Application: COICOP Product Classification
 
@@ -185,7 +193,7 @@ Relevant to **Consumer Price Index** compilation by National Statistical Institu
 
 ![Confidence distributions: correct (green) vs incorrect (red), BART & `classify` only.](experiment/confidence_boxplots_subset.png){fig-align="center" width="90%"}
 
-Welch $t$-tests (correct > incorrect) highly significant ($p < 0.001$) for all variations.
+Welch t-tests (correct > incorrect) highly significant (p < 0.001) for all variations.
 
 ## Score-Gap Discrimination — Boxplots
 
@@ -195,7 +203,7 @@ The score gap discriminates correctness comparably to confidence.
 
 ## Confidence & Calibration Metrics (excerpt)
 
-| Variation | Conf. (corr.) | Conf. (inc.) | $r$ | ECE | AUC (conf.) | Brier |
+| Variation | Conf. (corr.) | Conf. (inc.) | r | ECE | AUC (conf.) | Brier |
 |-----------|---------------|--------------|-----|-----|-------------|-------|
 | BART (names only) | 0.532 | 0.414 | 0.347 | 0.055 | 0.697 | 0.215 |
 | BART (names + opt-out) | 0.509 | 0.392 | 0.351 | 0.028 | 0.700 | 0.214 |
@@ -204,7 +212,7 @@ The score gap discriminates correctness comparably to confidence.
 | `classify` (names + desc.) | 0.642 | 0.460 | 0.445 | 0.149 | 0.788 | 0.175 |
 | `classify` (desc. + opt-out) | 0.627 | 0.425 | 0.484 | 0.177 | 0.821 | 0.174 |
 
-All Welch $t$-tests significant ($p < 0.001$ after BH correction). `classify` has higher AUC but higher ECE than BART.
+All Welch t-tests significant (p < 0.001 after BH correction). `classify` has higher AUC but higher ECE than BART.
 
 ## Threshold-Based Discrimination
 
@@ -258,7 +266,7 @@ At `max_calls=1`, `generate` matches scikit-llm (73.8%); accuracy falls monotoni
 - Confidence scores and score gaps **reliably discriminate** correct from incorrect predictions
 - Support effective **threshold-based triage** (75.5% → 92.8% at 58.6% coverage)
 
-**Future work:** temperature scaling, conformal prediction, broader RAG pipeline, collaborative web interface
+**Future work:** temperature scaling, conformal prediction, broader RAC pipeline, collaborative web interface
 
 ## Thank You
 
@@ -267,6 +275,6 @@ At `max_calls=1`, `generate` matches scikit-llm (73.8%); accuracy falls monotoni
 - `ollama-classifier`: `pip install ollama-classifier`
 - `ollama-classifier-gui`: `uvx ollama-classifier-gui`
 - `rollama-classifier`: `pak::pak("paluigi/rollama-classifier")`
-- `ollama-classifier-rs`: `ollama-classifier-rs = "0.4"`
+- `ollama-classifier-rs`: `ollama-classifier-rs = "0.5"`
 
-**Contact:** Luigi Palumbo (Bank of Italy) · Mengting Yu (Università degli Studi della Tuscia)
+**Contact:** Luigi Palumbo (luigi.palumbo@bancaditalia.it) · Mengting Yu (mengting.yu@unitus.it)
