@@ -24,6 +24,7 @@ Outputs (all in experiment/):
   ttest_results.txt
 """
 
+import math
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -31,6 +32,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy import stats
+
+from variations import VARIATION_SPECS
 
 # =============================================================================
 # Configuration
@@ -46,41 +49,36 @@ DROP_CODES = {OPT_OUT_LABEL, ERROR_LABEL}
 
 DPI = 300
 
-# Confidence-bearing methodologies only (scikit-llm has no confidence scores).
-# Ordered for stable, readable legends.
+# Confidence-bearing methodologies only. scikit-llm is excluded (no confidence
+# scores). The keys and run order are imported from ``variations.py`` — the same
+# shared catalog ``experiment.py`` writes — so the two scripts cannot drift
+# apart. ``build_long_frame`` still tolerates a partial ``results.xlsx``
+# (missing columns are skipped) so the analysis can run before the full sweep
+# completes.
+
+
+def _spec_display(spec) -> str:
+    """Legend label for a variation (compact generate suffix for plots)."""
+    name = spec.base_display()
+    if spec.method == "generate":
+        name = f"{name} [gen mc={spec.max_calls}]"
+    return name
+
+
 VARIATIONS: list[dict] = [
-    {"display": "BART (names only)", "key": "bart_names_only", "has_opt_out": False},
     {
-        "display": "BART (names + opt-out)",
-        "key": "bart_names_+_opt-out",
-        "has_opt_out": True,
-    },
-    {
-        "display": "Ollama (names only)",
-        "key": "ollama_names_only",
-        "has_opt_out": False,
-    },
-    {
-        "display": "Ollama (names + opt-out)",
-        "key": "ollama_names_+_opt-out",
-        "has_opt_out": True,
-    },
-    {
-        "display": "Ollama (names + desc.)",
-        "key": "ollama_names_+_descriptions",
-        "has_opt_out": False,
-    },
-    {
-        "display": "Ollama (desc. + opt-out)",
-        "key": "ollama_desc_+_opt-out",
-        "has_opt_out": True,
-    },
+        "display": _spec_display(spec),
+        "key": spec.key,
+        "has_opt_out": spec.has_opt_out,
+    }
+    for spec in VARIATION_SPECS
+    if spec.classifier != "skllm"
 ]
 
 THRESHOLDS = np.linspace(0.0, 1.0, 101)
 
 sns.set_theme(style="whitegrid", context="talk")
-PALETTE = sns.color_palette("tab10", n_colors=len(VARIATIONS))
+PALETTE = sns.color_palette("husl", n_colors=len(VARIATIONS))
 
 
 # =============================================================================
@@ -92,11 +90,17 @@ def build_long_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Long-format frame: methodology | confidence | correct (bool).
 
     Excludes opt-out/ERROR predictions and rows with missing confidence.
+    Methodologies whose confidence column is absent in ``df`` are skipped, so
+    the analysis can run against a partial ``results.xlsx``.
     """
     rows = []
     for var in VARIATIONS:
-        code = df[f"{var['key']}_code"]
-        conf = df[f"{var['key']}_conf"]
+        conf_col = f"{var['key']}_conf"
+        code_col = f"{var['key']}_code"
+        if conf_col not in df.columns or code_col not in df.columns:
+            continue
+        code = df[code_col]
+        conf = df[conf_col]
         gt = df["ground_truth"]
 
         valid = conf.notna() & ~code.isin(DROP_CODES)
@@ -126,12 +130,20 @@ def correctness_label(is_correct: bool) -> str:
 def plot_boxplots(long_df: pd.DataFrame, pvals: dict[str, float]) -> None:
     plot_df = long_df.assign(outcome=long_df["correct"].map(correctness_label))
 
+    present = [v for v in VARIATIONS if v["display"] in set(plot_df["methodology"])]
+    n = len(present)
+    n_cols = 3
+    n_rows = math.ceil(n / n_cols) if n else 1
     fig, axes = plt.subplots(
-        2, 3, figsize=(18, 11), sharey=True, constrained_layout=True
+        n_rows,
+        n_cols,
+        figsize=(18, 3.6 * n_rows),
+        sharey=True,
+        constrained_layout=True,
     )
     axes = axes.ravel()
 
-    for ax, var in zip(axes, VARIATIONS):
+    for ax, var in zip(axes, present):
         name = var["display"]
         sub = plot_df[plot_df["methodology"] == name]
         sns.boxplot(
@@ -167,7 +179,7 @@ def plot_boxplots(long_df: pd.DataFrame, pvals: dict[str, float]) -> None:
         ax.set_ylabel("Confidence" if ax is axes[0] else "")
         ax.set_ylim(-0.02, 1.02)
 
-    for ax in axes[len(VARIATIONS) :]:
+    for ax in axes[len(present) :]:
         ax.set_visible(False)
 
     fig.suptitle(
@@ -218,9 +230,9 @@ def run_ttests(long_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, float]]:
                 "Mean diff (C-I)": round(
                     float(np.mean(correct) - np.mean(incorrect)), 4
                 ),
-                "t-statistic": round(float(t_stat), 4)
-                if not np.isnan(t_stat)
-                else None,
+                "t-statistic": (
+                    round(float(t_stat), 4) if not np.isnan(t_stat) else None
+                ),
                 "p-value (one-tailed)": (
                     round(float(p_value), 6) if not np.isnan(p_value) else None
                 ),
@@ -269,6 +281,11 @@ def compute_threshold_curves(
         )
         correct = long_df.loc[long_df["methodology"] == name, "correct"].to_numpy()
         n_valid = len(conf)
+
+        if n_valid == 0:
+            acc_curves[name] = ([], [])
+            cov_curves[name] = ([], [])
+            continue
 
         xs_acc, ys_acc = [], []
         xs_cov, ys_cov = [], []
