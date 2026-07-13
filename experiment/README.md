@@ -78,14 +78,34 @@ participate in the confidence analysis.
 - **`summary.txt`** — human-readable summary statistics
 
 ### `analyze_confidence.py`
-Reads the *Detailed Results* sheet and produces (all in `experiment/`):
-- **`confidence_boxplots.{png,eps}`** — confidence by Correct/Incorrect, faceted
-  across all 22 confidence-bearing variations (BART ×2, classify ×4, generate ×16)
-- **`selective_accuracy.{png,eps}`** — accuracy vs confidence threshold
-- **`coverage_curve.{png,eps}`** — coverage vs confidence threshold
-- **`ttest_results.{csv,txt}`** — one-tailed Welch t-tests per methodology
+Reads the *Detailed Results* sheet and produces a comprehensive confidence &
+calibration analysis over all 22 confidence-bearing variations (BART ×2,
+`classify` ×4, `generate` ×16). Confidence and the **score gap** (top − second
+class probability) are treated as parallel per-item metrics, each compared
+correct-vs-incorrect with a one-tailed Welch *t*-test, Cohen's *d*, and
+Bonferroni / Benjamini–Hochberg correction within each metric family.
 
-scikit-llm is excluded from the confidence analysis (no confidence scores).
+Outputs (all in `experiment/`):
+- **`confidence_boxplots.{png,eps}`** — confidence by Correct/Incorrect (22 facets)
+- **`scoregap_boxplots.{png,eps}`** — score gap by Correct/Incorrect (22 facets)
+- **`selective_accuracy.{png,eps}`** — accuracy vs confidence threshold (2×2 by choice config)
+- **`coverage_curve.{png,eps}`** — coverage vs confidence threshold (2×2 by choice config)
+- **`selective_accuracy_margin.{png,eps}`** — accuracy vs score-gap (margin) threshold (2×2)
+- **`coverage_curve_margin.{png,eps}`** — coverage vs score-gap (margin) threshold (2×2)
+- **`calibration_curve.{png,eps}`** — reliability diagram + per-variation ECE (2×2 by choice config)
+- **`generate_sweep.{png,eps}`** — accuracy / mean confidence / ECE / AUC vs `max_calls`
+  for the 16 `generate` variations, marking the approximate regime (`max_calls` ≤ 5)
+- **`ttest_results.{csv,txt}`** — one-tailed Welch *t*-tests for both metrics +
+  Cohen's *d* + Bonferroni / BH-FDR significance
+- **`confidence_table.{csv,tex,txt}`** — combined, paper-ready per-variation table
+  (means, Pearson *r*, score gap split, Welch *t*, Cohen's *d*, AUC of confidence and gap, Brier,
+  ECE). The `.tex` fragment is a drop-in starting point for `tab:confidence`.
+- **`threshold_discrimination.{csv,tex,txt}`** — Youden-optimal thresholds on confidence and on the
+  margin per variation (AUC, threshold, selective accuracy, coverage); validates that either score
+  discriminates correct from incorrect. The `.tex` fragment is a starting point for `tab:threshold`.
+
+scikit-llm is excluded from the confidence analysis (label-only; no confidence
+scores). Opt-out and `ERROR` predictions are dropped before every analysis.
 
 ## Dataset
 
@@ -122,3 +142,14 @@ with `01.2` (Non-alcoholic beverages). This yields ~637 products across 7 subcla
   files (missing columns are skipped).
 - **Lint/format**: Resolved pre-existing ruff issues; both scripts pass
   `ruff check` and `black`.
+- **Confidence analysis made comprehensive**: `analyze_confidence.py` now treats
+  the score gap (top − second class probability) as a first-class metric alongside
+  confidence — computed per item for all valid predictions, split
+  correct/incorrect, and tested with its own Welch *t*/Cohen's *d* (Bonferroni
+  and BH-FDR correction applied within each metric family). Added: a
+  `scoregap_boxplots` figure, a 2×2 faceted `calibration_curve` (reliability
+  diagram) with per-variation ECE, a `generate_sweep` figure
+  (accuracy/confidence/ECE/AUC vs `max_calls`, marking the approximate regime),
+  2×2 faceted `selective_accuracy`/`coverage_curve`, ranking metrics (AUC-ROC
+  via rank-sum, Brier), and a combined paper-ready `confidence_table.{csv,tex,txt}`.
+  AUC and Brier use numpy/scipy only (no scikit-learn dependency).

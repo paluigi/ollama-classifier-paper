@@ -514,9 +514,11 @@ def compute_confidence_analysis(
         corr_pval = None
 
     # Score gap = margin of victory (top probability minus second-highest),
-    # evaluated over incorrect predictions only.
+    # averaged over ALL valid predictions (correct + incorrect). The
+    # correct/incorrect split of the score gap is reported by
+    # analyze_confidence.py; this Confidence Summary reports the all-items mean.
     gaps = []
-    for idx in incorrect_mask.index:
+    for idx in probs_v.index:
         probs = json.loads(probs_v.loc[idx]) if pd.notna(probs_v.loc[idx]) else {}
         gap = _score_gap_from_probs(probs)
         if gap is not None:

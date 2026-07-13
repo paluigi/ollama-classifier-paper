@@ -1,6 +1,6 @@
 % =============================================================================
 % main.tex — Zero-Shot Text Classification with Locally-Hosted Large Language Models
-% Authors: Luigi Palumbo, Mengting Yu, Carolina Camassa
+% Authors: Luigi Palumbo, Mengting Yu
 % =============================================================================
 \documentclass[11pt,a4paper]{article}
 
@@ -20,13 +20,22 @@
 \usepackage{subcaption}
 \usepackage{float}
 \usepackage{amsmath,amssymb}
+\usepackage{siunitx}
+\usepackage{microtype}
+% Give justified text last-resort stretch so long unbreakable tokens
+% (e.g.\ \texttt{::}-paths) do not produce overfull boxes.
+\setlength{\emergencystretch}{3em}
+
+% Placeholder for "not applicable" cells in tables.
+\providecommand{\dm}{---}
 
 % ---------- Bibliography ----------
 \usepackage[style=apa,backend=biber,natbib=true]{biblatex}
 \addbibresource{references.bib}
 
-% Suppress internal annote fields from bibliography display
+% Suppress internal annote/annotation fields from bibliography display
 \AtEveryBibitem{%
+  \clearfield{annotation}%
   \clearfield{annote}%
 }
 
@@ -52,14 +61,33 @@
   backgroundcolor=\color{gray!5},
 }
 
+% ---------- Additional listings languages (R, Rust) ----------
+\lstdefinelanguage{R}{%
+  morekeywords={if,else,for,while,repeat,function,return,in,TRUE,FALSE,
+    NULL,NA,Inf,NaN,library,require},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+  morestring=[b]',
+}
+\lstdefinelanguage{Rust}{%
+  morekeywords={fn,let,mut,pub,use,mod,struct,enum,impl,trait,return,if,
+    else,for,while,loop,match,as,in,ref,move,where,async,await,dyn,unsafe,
+    const,static,Self,self,super,crate,true,false,None,Some,Ok,Err,vec},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+}
+
 % ---------- Title ----------
 \title{
   \textbf{Zero-Shot Text Classification with Locally-Hosted\\
   Large Language Models: The \texttt{ollama-classifier} Library}
 }
 \author{
-  Luigi Palumbo\thanks{Corresponding author.}
-  \and Mengting Yu
+  Luigi Palumbo\thanks{Bank of Italy. Corresponding author.}
+  \and Mengting Yu\thanks{Università degli Studi della Tuscia.}
 }
 \date{\today}
 
@@ -70,101 +98,95 @@
 
 % ---------- Abstract ----------
 \begin{abstract}
-  Large Language Models (LLMs) have emerged as powerful zero-shot classifiers,
-  yet their adoption in domains that demand data privacy, cost control, and
-  offline operation remains limited by reliance on proprietary cloud APIs.
-  We present \texttt{ollama-classifier}, an open-source Python library that
-  enables zero-shot and few-shot text classification using locally-hosted LLMs
-  through the Ollama runtime. The library provides constrained output generation,
-  confidence scoring, batch processing, and integration with multiple inference
-  backends (Ollama, vLLM, SGLang, llama.cpp), making LLM-based classification
-  accessible without fine-tuning, API keys, or internet connectivity.
-  A companion desktop GUI built with Flet allows non-technical users to leverage
-  retrieval-augmented classification through an intuitive workflow; the
-  application is publicly released as \texttt{ollama-classifier-gui} on GitHub
-  and the Python Package Index (PyPI).
-  We benchmark the library against BART-large-MNLI and scikit-llm on a COICOP
-  product classification task, demonstrating that a compact 3B-parameter model
-  served locally substantially outperforms the NLI-based baseline and matches
-  scikit-llm in accuracy while additionally providing calibrated confidence
-  scores that reliably discriminate correct from incorrect predictions.
+  Large Language Models (LLMs) are powerful zero-shot classifiers, yet their
+  adoption in domains that demand data privacy, cost control, and offline
+  operation remains limited by reliance on proprietary cloud
+  application-programming interfaces (APIs). We present
+  \texttt{ollama-classifier}, an open-source Python library for zero-shot and
+  few-shot text classification with locally-hosted LLMs. The library exposes
+  two complementary scoring strategies---multi-call completion scoring
+  (\texttt{classify}) and adaptive, budget-controlled constrained generation
+  (\texttt{generate})---both yielding a full probability distribution and a
+  confidence score, and both available across four inference
+  backends (Ollama, vLLM, SGLang, llama.cpp) through a unified interface. A
+  no-code desktop graphical user interface (GUI)
+  (\texttt{ollama-classifier-gui}) and cross-language
+  ports in R (\texttt{rollama-classifier}) and Rust
+  (\texttt{ollama-classifier-rs}) extend the same API to non-programmers and
+  to other language ecosystems. We benchmark the library against
+  BART-large-MNLI and scikit-llm on a COICOP (Classification of Individual
+  Consumption According to Purpose) product-classification task and
+  show that a compact 3B-parameter model served locally substantially
+  outperforms the natural-language-inference (NLI) baseline and matches scikit-llm in accuracy, while
+  additionally providing confidence scores---and the margin between the two
+  highest class probabilities---that reliably discriminate correct from
+  incorrect predictions and support threshold-based triage.
 \end{abstract}
 
 \noindent\textbf{Keywords:} zero-shot classification, large language models,
-local inference, retrieval-augmented classification, Ollama, open-source software
+local inference, constrained generation, confidence calibration, Ollama,
+open-source software
 
 % =============================================================================
 \section{Introduction}
 \label{sec:introduction}
 % =============================================================================
 
-The advent of Large Language Models (LLMs) has fundamentally transformed
-natural language processing, enabling remarkable zero-shot and few-shot
-performance across a wide range of tasks \citep{brown2020language,
-radford2019gpt2, zhao2023survey}. Among these tasks, text classification---the
-assignment of predefined categorical labels to free-form text---stands out as a
+The advent of Large Language Models (LLMs) has transformed natural language
+processing, enabling zero-shot and few-shot performance across a wide range
+of tasks \citep{brown2020language, radford2019gpt2, zhao2023survey}. Text
+classification---the assignment of predefined labels to free-form text---is a
 particularly impactful application, with use cases spanning sentiment analysis
-\citep{wang2024sentiment}, economic taxonomy coding, and product categorization
-\citep{nunes2025rac}.
+\citep{wang2024sentiment}, economic-taxonomy coding, and product
+categorization \citep{nunes2025rac}.
 
-Traditionally, text classification has relied on supervised machine learning
-pipelines that require substantial labeled training data, feature engineering,
-and model fine-tuning. While transformer-based architectures such as BERT
-\citep{berki2025nlp} have improved classification accuracy, they remain
-data-intensive and offer limited adaptability to new or evolving taxonomies
-without costly retraining. The emergence of LLMs has challenged this paradigm:
-models such as GPT-3 \citep{brown2020language} and GPT-4 \citep{openai2023gpt4}
-have demonstrated that generative models can perform classification through
-in-context learning, eliminating the need for task-specific training data.
+Traditional text classification relies on supervised pipelines that demand
+labeled training data, feature engineering, and model fine-tuning.
+Transformer encoders such as BERT \citep{berki2025nlp} improve accuracy but
+remain data-intensive and adapt poorly to evolving taxonomies without costly
+retraining. LLMs challenge this paradigm: models such as GPT-3
+\citep{brown2020language} and GPT-4 \citep{openai2023gpt4} perform
+classification through in-context learning, removing the need for
+task-specific training data. Deploying these capabilities in production,
+however, and especially in sensitive domains such as official statistics,
+healthcare, or finance, raises three concerns: proprietary cloud APIs incur
+recurring costs, require internet connectivity, and expose confidential or
+regulated data to third parties.
 
-However, leveraging these capabilities in production environments---particularly
-in sensitive domains such as official statistics, healthcare, and
-finance---introduces significant challenges. Proprietary cloud-based APIs incur
-recurring costs, require internet connectivity, and raise data privacy concerns
-when processing confidential or regulated information. These constraints limit
-the applicability of LLM-based classification in settings where data sovereignty
-and operational independence are paramount.
+The proliferation of open-source LLMs---LLaMA \citep{touvron2023llama,
+meta2024llama3}, Mistral \citep{jiang2023mistral}, Qwen
+\citep{yang2024qwen2}, and DeepSeek-R1 \citep{deepseek2025r1}---together with
+lightweight serving frameworks such as Ollama \citep{ollama} makes capable
+models runnable on consumer hardware. This creates an opportunity to build
+classification tools that combine the zero-shot reasoning of LLMs with the
+privacy, cost-effectiveness, and offline capability of local inference.
 
-The recent proliferation of open-source LLMs---including LLaMA
-\citep{touvron2023llama, meta2024llama3}, Mistral
-\citep{jiang2023mistral}, Qwen \citep{yang2024qwen2}, and DeepSeek-R1
-\citep{deepseek2025r1}---combined with lightweight serving frameworks such as
-Ollama \citep{ollama}, has made it feasible to run capable language models on
-consumer hardware. This shift creates an opportunity to build classification
-tools that combine the zero-shot reasoning power of LLMs with the privacy,
-cost-effectiveness, and offline capability of local inference.
-
-We present \texttt{ollama-classifier}, an open-source Python library that
-realizes this opportunity by providing a unified interface for zero-shot and
-few-shot text classification using locally-hosted LLMs. The library is designed
-around three core principles:
+We present \texttt{ollama-classifier} \citep{ollama-classifier}, an
+open-source Python library that realizes this opportunity through a unified
+interface for zero-shot and few-shot text classification with locally-hosted
+LLMs. The library is built around three principles:
 
 \begin{enumerate}[leftmargin=*]
-  \item \textbf{No fine-tuning required.} Classification is performed through
-        prompting and retrieval augmentation, leveraging the model's pre-trained
-        knowledge without any task-specific training.
+  \item \textbf{No fine-tuning required.} Classification uses prompting and
+        retrieval augmentation, exploiting the model's pre-trained knowledge
+        without task-specific training.
   \item \textbf{Local and private.} All inference runs on the user's hardware
-        through the Ollama runtime or compatible backends, ensuring that no
-        data leaves the local machine.
-  \item \textbf{Accessible to non-technical users.} A companion GUI application
-        provides a point-and-click interface for the full classification
-        workflow, abstracting away the complexity of prompt engineering,
-        backend configuration, and batch processing.
+        through Ollama or a compatible backend, so no data leaves the machine.
+  \item \textbf{Accompanied by calibrated uncertainty.} Every prediction
+        carries a full probability distribution and a confidence score,
+        enabling triage between auto-accepted labels and items requiring
+        human review.
 \end{enumerate}
 
-The remainder of this paper is organized as follows.
-Section~\ref{sec:related} reviews related work on LLM-based classification and
-retrieval augmentation.
-Section~\ref{sec:background} provides background on the enabling technologies.
-Section~\ref{sec:library} describes the \texttt{ollama-classifier} library's
-architecture and API.
-Section~\ref{sec:gui} introduces the companion GUI application.
-Section~\ref{sec:application} illustrates a real-world application to product
-classification and presents a benchmark evaluation comparing
-\texttt{ollama-classifier} against a BART-large-MNLI zero-shot baseline and
-the scikit-llm library.
-Section~\ref{sec:discussion} discusses design decisions and limitations, and
-Section~\ref{sec:conclusion} concludes with directions for future work.
+The remainder of the paper is organized as follows.
+Section~\ref{sec:related} reviews related work; Section~\ref{sec:background}
+covers the enabling technologies; Section~\ref{sec:library} describes the
+library's API and confidence-scoring methodology; Section~\ref{sec:ecosystem}
+presents the GUI and the cross-language ports; and
+Section~\ref{sec:application} reports a benchmark evaluation on COICOP
+product classification, including a calibration and threshold-discrimination
+analysis. Section~\ref{sec:discussion} discusses design decisions and
+limitations, and Section~\ref{sec:conclusion} concludes.
 
 % =============================================================================
 \section{Related Work}
@@ -173,114 +195,85 @@ Section~\ref{sec:conclusion} concludes with directions for future work.
 
 \subsection{LLMs as Classifiers}
 
-The use of generative language models as classifiers has its roots in the
-observation that autoregressive LLMs can perform discriminative tasks through
-careful prompt design. \citet{radford2019gpt2} first demonstrated that GPT-2
-could perform zero-shot task transfer without explicit supervision, establishing
-the paradigm of leveraging generative pre-training for discriminative
-downstream tasks. This capability was dramatically scaled by GPT-3
-\citep{brown2020language}, which showed that few-shot in-context learning could
-achieve competitive performance on classification benchmarks without any
-gradient updates.
-
-Subsequent work has explored the boundaries of this approach.
-\citet{liu2023preliminary} provide a systematic survey of prompting methods,
-cataloguing strategies for instructing LLMs to perform classification through
-template-based prompts. \citet{mu2024prompt} investigate how prompt complexity
-affects zero-shot classification performance, finding that well-structured
-prompts with explicit instructions and output constraints significantly improve
-accuracy. \citet{gilardi2023chatgpt} demonstrate that ChatGPT can match or
-exceed crowd-worker quality on text annotation tasks, providing empirical
-support for using LLMs as practical classification tools.
+Generative language models perform discriminative tasks through careful
+prompt design. \citet{radford2019gpt2} first showed that GPT-2 could perform
+zero-shot task transfer, and \citet{brown2020language} scaled the result with
+GPT-3, where few-shot in-context learning reached competitive classification
+accuracy without gradient updates. \citet{liu2023preliminary} survey prompting
+methods, and \citet{mu2024prompt} show that well-structured prompts with
+explicit output constraints materially improve zero-shot accuracy.
+\citet{gilardi2023chatgpt} demonstrate that ChatGPT can match or exceed
+crowd-worker quality on text annotation, supporting LLMs as practical
+classifiers.
 
 \subsection{Retrieval-Augmented Classification}
 
-Retrieval-Augmented Generation (RAG), introduced by \citet{lewis2020retrieval},
-grounds LLM outputs in externally retrieved evidence, improving both factuality
-and stability. This paradigm has been adapted to classification tasks through
-Retrieval-Augmented Classification (RAC). \citet{yu2023retrieval} demonstrate
-that combining nearest-neighbor retrieval with few-shot prompting improves text
-classification without fine-tuning. \citet{abdullahi2024retrieval} extend this
-to the zero-shot setting, showing that retrieved exemplars can enable
-classification into arbitrary taxonomies without training data.
-
-Most recently, \citet{nunes2025rac} apply RAC to COICOP 2018 product
-classification, constructing a synthetic knowledge base of 34,451 exemplars
-and achieving up to 0.80 accuracy at the finest taxonomy level. The
-\texttt{ollama-classifier} library builds directly on this line of research,
-operationalizing the RAC framework as a general-purpose, reusable Python tool.
+Retrieval-Augmented Generation \citep{lewis2020retrieval} grounds LLM outputs
+in externally retrieved evidence, improving factuality and stability. Adapted
+to classification as Retrieval-Augmented Classification (RAC),
+\citet{yu2023retrieval} combine nearest-neighbor retrieval with few-shot
+prompting, and \citet{abdullahi2024retrieval} extend the idea to the
+zero-shot setting. Most relevant to this work, \citet{nunes2025rac} apply RAC
+to COICOP 2018 product classification, building a synthetic knowledge base of
+34{,}451 exemplars and reaching up to 0.80 accuracy at the finest taxonomy
+level. \texttt{ollama-classifier} operationalizes the final part of this pipeline as a
+general-purpose, reusable library.
 
 \subsection{Existing Classification Libraries}
 
-Several open-source projects address LLM-based text classification.
-\texttt{llmclassifier} \citep{cvxtz2023llmclassifier} provides a Python
-framework for building classification pipelines with LLMs, but targets API-based
-models and does not support local inference. \texttt{llmClassificR}
-\citep{golino2023llmclassificr} offers similar functionality in R, again
-relying on cloud-hosted models. \texttt{scikit-llm} \citep{ScikitLLM} provides a
-scikit-learn-compatible interface for zero-shot and few-shot classification with
-LLMs and can be directed at a local model server through an OpenAI-compatible
-endpoint. Unlike \texttt{ollama-classifier}, scikit-llm is a label-only
-classifier: it returns the predicted class but does not expose calibrated
-confidence scores or a full probability distribution over the candidate labels,
-limiting its use for uncertainty-aware triage workflows.
-
-\texttt{ollama-classifier} differentiates itself by (i) focusing exclusively on
-local inference through Ollama and compatible backends, (ii) providing
-constrained output generation that forces the model to return only valid class
-labels, (iii) implementing confidence scoring through multi-call softmax
-evaluation, and (iv) offering a dedicated GUI application for non-technical
-users---features not found together in any existing library.
-
-To extend the \texttt{ollama-classifier} ecosystem beyond Python, we developed
-\texttt{rollama-classifier}~\citep{rollama-classifier}, a native R package
-that ports the library's constrained-output classification and multi-backend
-support to the R environment. This enables R users---particularly in
-statistical offices, government agencies, and academic research---to leverage
-the same LLM-based classification capabilities without leaving their preferred
-analysis environment.
+Several open-source projects address LLM-based classification.
+\texttt{llmclassifier} \citep{cvxtz2023llmclassifier} and
+\texttt{llmClassificR} \citep{golino2023llmclassificr} build classification
+pipelines on top of API-hosted models. \texttt{scikit-llm}
+\citep{ScikitLLM} offers a scikit-learn-compatible interface for zero-shot
+and few-shot classification and can be pointed at a local model server
+through an OpenAI-compatible endpoint. Unlike \texttt{ollama-classifier},
+scikit-llm is a label-only classifier: it returns the predicted class but no
+calibrated confidence scores or full probability distribution, which precludes
+the uncertainty-aware triage workflows analyzed in
+Section~\ref{sec:application}. \texttt{ollama-classifier} further
+differentiates itself by focusing on local inference across multiple serving
+engines, by enforcing constrained output generation, and by shipping a
+dedicated GUI and cross-language ports (Section~\ref{sec:ecosystem}).
 
 % =============================================================================
 \section{Background}
 \label{sec:background}
 % =============================================================================
 
-\subsection{The Ollama Runtime}
+\subsection{Local LLM Serving and Inference Backends}
 
-Ollama \citep{ollama} is an open-source framework for running LLMs locally on
-consumer hardware. It provides a lightweight model server with a REST API,
-model management (pull, list, delete), and support for quantized inference
-that enables running models ranging from 1B to 70B+ parameters on standard
-workstations.
+Ollama \citep{ollama} is an open-source runtime for running LLMs locally on
+consumer hardware. It provides a lightweight model server with a
+Representational State Transfer (REST) API,
+model management (pull, list, delete), and quantized inference that allows
+models from 1B to 70B+ parameters to run on standard workstations. The Ollama
+Python library \citep{ollama_python} exposes this API and structured outputs;
+\texttt{ollama-classifier} wraps it (and the equivalent clients of other
+engines) behind a higher-level classification interface.
 
-The Ollama Python library \citep{ollama_python} provides a convenient client
-interface, handling API communication and structured outputs. The
-\texttt{ollama-classifier} library wraps this client to offer a higher-level
-classification API, abstracting away prompt construction, output parsing, and
-confidence computation.
+While Ollama is the default backend, \texttt{ollama-classifier} supports four
+inference engines through a common interface: \emph{Ollama} for consumer
+hardware and single-user workflows; \emph{vLLM} for high-throughput batch
+inference; \emph{SGLang} for low-latency serving; and \emph{llama.cpp} for
+resource-constrained central processing unit (CPU) and mixed
+CPU/graphics processing unit (GPU) environments. All four expose the
+per-token log-probabilities that the confidence-scoring methods require
+(Section~\ref{sec:confidence}); they differ in how those log-probabilities
+are obtained and in the constraint mechanism used to enforce valid labels.
 
-\subsection{Inference Backends}
+% SUBSECTION REMOVED, NOT RELEVANT TO THE PAPER
+% \subsection{Embedding Models for Retrieval}
 
-While Ollama serves as the default backend, \texttt{ollama-classifier}
-supports multiple inference engines through a unified interface: Ollama for
-consumer hardware and single-user workflows; vLLM for high-throughput batch
-inference; SGLang for low-latency serving; and llama.cpp for resource-constrained
-CPU and mixed CPU/GPU environments. All backends share a common configuration
-interface, allowing users to switch between them without modifying application
-code.
-
-\subsection{Embedding Models for Retrieval}
-
-The retrieval component of RAC relies on embedding models that convert text
-into dense vector representations. SentenceTransformers
-\citep{reimers2019sentence} provides the foundational Siamese BERT
-architecture for producing semantically meaningful sentence embeddings. The E5
-family \citep{wang2022text} offers multilingual semantic similarity across
-100 languages, while the GTE family \citep{chen2024gte} provides
-instruction-tuned embeddings with strong multilingual performance. In the RAC
-evaluation by \citet{nunes2025rac}, the GTE models achieved the highest
-retrieval presence (90.7\%), confirming their effectiveness for
-classification-oriented retrieval tasks.
+% The retrieval stage of RAC relies on embedding models that map text to dense
+% vectors. SentenceTransformers \citep{reimers2019sentence} provides the
+% foundational Siamese-BERT architecture; the E5 family
+% \citep{wang2022text} offers multilingual similarity across 100 languages; and
+% the GTE family \citep{chen2024gte} provides instruction-tuned embeddings with
+% strong multilingual performance. In the RAC evaluation of
+% \citet{nunes2025rac}, GTE models achieved the highest retrieval presence
+% (90.7\%), confirming their effectiveness for classification-oriented
+% retrieval.
 
 % =============================================================================
 \section{The \texttt{ollama-classifier} Library}
@@ -289,561 +282,679 @@ classification-oriented retrieval tasks.
 
 \subsection{Design Philosophy}
 
-\texttt{ollama-classifier} is designed as a lightweight, modular Python library
-that enables users to perform text classification with LLMs through a minimal
-API surface. The design follows these principles:
-
-\begin{enumerate}[leftmargin=*]
-  \item \textbf{Simplicity}: A classification call requires only a text input
-        and a list of candidate labels. All complexity---prompt construction,
-        output parsing, backend communication---is handled internally.
-  \item \textbf{Flexibility}: Users can customize the system prompt, provide
-        label descriptions, choose between multiple classification strategies,
-        and switch inference backends transparently.
-  \item \textbf{Reliability}: Constrained output generation ensures that the
-        model returns only valid class labels, preventing hallucinated or
-        malformed predictions. Confidence scoring enables triage between
-        high-confidence auto-accepted labels and low-confidence cases
-        requiring human review.
-  \item \textbf{Scalability}: Batch and async APIs enable processing large
-        datasets efficiently, with concurrent requests supported across all
-        backends.
-\end{enumerate}
+\texttt{ollama-classifier} is a lightweight, modular library that performs
+text classification through a minimal API surface. Its design follows four
+principles: \emph{simplicity}, since a classification call needs only a text
+and a set of candidate labels, with all prompt construction, output parsing,
+and backend communication handled internally; \emph{flexibility}, since users
+can customize the system prompt, supply label descriptions, choose between
+two scoring strategies, and switch backends transparently; \emph{reliability},
+since constrained output generation forces valid labels and confidence scores
+enable triage between auto-accepted and human-reviewed items; and
+\emph{scalability}, since batch and asynchronous APIs process large datasets
+with concurrent requests across all backends.
 
 \subsection{Core API}
 
-The library exposes two primary classifier classes:
-\texttt{OllamaClassifier} (Ollama-specific) and \texttt{LLMClassifier}
-(backend-agnostic). Both share an identical API surface, shown in
-Table~\ref{tab:api}.
+The library exposes a single backend-agnostic entry point,
+\texttt{LLMClassifier}, constructed over a backend such as
+\texttt{OllamaBackend}. Table~\ref{tab:api} summarizes its methods. Each
+synchronous method has an asynchronous twin prefixed with \texttt{a}
+(\texttt{agenerate}, \texttt{aclassify}, \dots), and both strategies have
+batch variants.
 
 \begin{table}[htbp]
   \centering
-  \caption{Core methods of the \texttt{ollama-classifier} API. Each method
-           has an asynchronous counterpart prefixed with \texttt{a}
-           (e.g., \texttt{agenerate}, \texttt{aclassify}).}
+  \caption{Core methods of the \texttt{ollama-classifier} API. Both
+           \texttt{generate} and \texttt{classify} return a
+           \texttt{ClassificationResult} carrying the prediction, a confidence
+           score, a full probability distribution, and diagnostics. Each
+           method has an asynchronous counterpart prefixed with \texttt{a}
+           and a batch variant.}
   \label{tab:api}
-  \begin{tabular}{lp{8cm}}
+  \begin{tabular}{lp{8.2cm}}
     \toprule
     \textbf{Method} & \textbf{Description} \\
     \midrule
-    \texttt{generate()} & Constrained output only; returns the predicted label
-                          without confidence scores (fastest method). \\
-    \texttt{classify()} & Full classification with confidence scores; makes
-                          $N$ API calls for $N$ choices to compute calibrated
-                          probabilities via softmax. \\
-    \texttt{batch\_generate()} & Batch constrained output for multiple texts. \\
-    \texttt{batch\_classify()} & Batch classification with confidence scores. \\
+    \texttt{generate()} & Adaptive trie-masked constrained generation.
+                          Reconstructs per-label log-probabilities from one
+                          to \texttt{max\_calls} calls; budget-controlled,
+                          may be approximate under partial coverage. \\
+    \texttt{classify()} & Multi-call completion scoring. Makes one call per
+                          candidate label and returns exact, calibrated
+                          probabilities. \\
+    \texttt{batch\_generate()} / \texttt{batch\_classify()} & Batch variants
+                          for many texts. \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\subsection{Classification Strategies}
+\subsection{Confidence Estimation}
+\label{sec:confidence}
 
-\texttt{ollama-classifier} supports two classification strategies, each
-offering a different trade-off between speed and confidence calibration:
+Both \texttt{classify} and \texttt{generate} return a
+\texttt{ClassificationResult} with the fields \texttt{prediction},
+\texttt{confidence}, \texttt{probabilities}, \texttt{method},
+\texttt{approximate}, \texttt{coverage}, and \texttt{n\_calls}. Per-label
+scores are computed in log space as the \emph{geometric mean of the label's
+per-token log-probabilities}---equivalently, the arithmetic mean of the
+log-probabilities, which removes the length and concentration bias of raw
+log-probability summation---and then normalized with a max-subtracted
+softmax.
 
-\begin{enumerate}[leftmargin=*]
-  \item \textbf{Generate only} (\texttt{generate}): The model receives a single
-        prompt containing the text and candidate labels, and returns one
-        predicted label. This is the fastest strategy, suitable when speed is
-        critical and confidence estimation is not required.
+\paragraph{Multi-call completion scoring (\texttt{classify}).}
+For each candidate label $y_i$, the backend returns the per-token
+log-probabilities of that label's own tokens $T_i$ given the prompt. The
+label score and the calibrated distribution are
+\[
+  s(y_i)=\frac{1}{|T_i|}\sum_{t\in T_i}\log p\!\left(t\mid x,\text{prefix}_t\right),
+  \qquad
+  \text{P}(y_i\mid x)=\frac{\exp\!\left(s(y_i)\right)}{\sum_{j}\exp\!\left(s(y_j)\right)},
+\]
+and $\text{confidence}=\max_i \text{P}(y_i\mid x)$. Tokens the backend cannot
+score contribute $-\infty$ and are excluded from the mean; a label that is
+entirely unscoreable maps to probability zero, with a uniform fallback when
+all labels fail. This strategy is always exact and issues one call per label
+(\texttt{method}\,=\,\texttt{"multi\_call"}, \texttt{approximate}\,=\,\texttt{False}).
 
-  \item \textbf{Full classification} (\texttt{classify}): Makes $N$ separate API
-        calls for $N$ candidate labels, computing raw log-probability scores
-        that are normalized using a softmax function to produce a calibrated
-        probability distribution over all classes:
-        \[
-          \text{P}(y_i \mid x) = \frac{\exp(s_i)}{\sum_{j=1}^{N} \exp(s_j)},
-        \]
-        where $s_i$ is the log-probability score for class $y_i$ and $N$ is the
-        number of candidate classes. Returns both the predicted label and the
-        full probability distribution, recommended for applications requiring
-        both a prediction and a measure of certainty for triage purposes.
-\end{enumerate}
+\paragraph{Adaptive trie-masked generation (\texttt{generate}).}
+Candidate labels are tokenized into a prefix trie, and each constrained call
+is restricted to trie tokens while returning the \texttt{top\_logprobs} of
+\emph{every} sibling alternative, so labels the model did not emit are still
+scored. A breadth-first search over clusters of labels sharing a scored
+prefix spends between one and \texttt{max\_calls} calls. For each label
+$y_i$ relative to the generated (``winning'') path $y^\ast$, the divergence
+point
+\[
+  d(y_i,y^\ast)=\min\bigl\{k:\text{tok}_k(y_i)\neq\text{tok}_k(y^\ast)\bigr\}
+\]
+marks the last position at which the label and the winner share a
+conditioning prefix; the label is scored exactly on tokens $0,\dots,d$ and
+excluded beyond it. Partial scores feed the same geometric-mean and softmax
+as \texttt{classify}. The reported \texttt{coverage}$(y_i)$ is the fraction
+of the label's tokens that were scored, and \texttt{approximate} is
+\texttt{True} whenever any label has coverage below one. Setting
+\texttt{max\_calls}\,=\,1 yields a single fast, approximate call; larger
+budgets resolve more clusters adaptively; and \texttt{max\_calls}\,=\,\texttt{None}
+exhausts the frontier to produce exact scores (degenerating to one call per
+label in the worst case).
+
+\paragraph{Backend differentiation.}
+All four backends expose per-token log-probabilities and support both
+strategies; they differ in the constraint mechanism and in how
+\texttt{classify} obtains its scores (Table~\ref{tab:backends}). vLLM and
+SGLang score each label as an unconstrained continuation of the prompt
+(echo/prefill), which is the source of their differentiated confidence;
+Ollama and llama.cpp lack a usable echo path on instruction-tuned models and
+instead force the label through constrained generation, reading the
+\emph{pre-mask} logits---the genuine model distribution before constraint
+masking---so their scores remain comparable to the echo values. Tokenization
+for the trie uses empirical forced constrained generation in every backend,
+so trie boundaries match those of real constrained generation.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Backend differentiation in \texttt{ollama-classifier} (v0.5.0).
+           All backends expose per-token log-probabilities and support both
+           \texttt{classify} and \texttt{generate}; they differ in the
+           constrained-output mechanism and in how \texttt{classify} obtains
+           per-label scores.}
+  \label{tab:backends}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Backend} & \textbf{Constrained-output mechanism} & \textbf{\texttt{classify} scoring path} \\
+    \midrule
+    Ollama    & JavaScript Object Notation (JSON) Schema enum over a \texttt{\{"label":\dots\}} field & Forced constrained generation \\
+    vLLM      & \texttt{structured\_outputs.choice} & Echo / prefill \\
+    SGLang    & regex alternation & Echo / prefill \\
+    llama.cpp & GBNF (grammar-based Backus--Naur Form) grammar & Forced constrained generation \\
+    \bottomrule
+  \end{tabular}}
+\end{table}
 
 \subsection{Constrained Output Generation}
 
-A key design feature of \texttt{ollama-classifier} is the enforcement of
-constrained output. The system prompt instructs the model to return only the
-exact text of one of the provided candidate labels, preventing hallucinated
-categories, partial responses, or verbose explanations. When supported by the
-backend, JSON schema constraints are applied to structurally guarantee valid
-output. For backends that do not support schema constraints (e.g., standard
-Ollama), the prompt-based approach ensures reliable output formatting through
-careful instruction design informed by the prompting literature
-\citep{liu2023preliminary, mu2024prompt}.
+Independently of the backend mechanism, the system prompt instructs the model
+to return only the exact text of one candidate label, preventing
+hallucinated categories, partial responses, or verbose explanations. Where
+the backend supports it, a structural constraint (Table~\ref{tab:backends})
+guarantees valid output; otherwise, careful instruction design informed by
+the prompting literature \citep{liu2023preliminary, mu2024prompt} ensures
+reliable formatting. The same token-level constraint that bounds generation
+also defines the trie used by \texttt{generate}.
 
-\subsection{Confidence Scoring and Human-in-the-Loop}
+\subsection{Opt-out and Human-in-the-Loop}
 
-The confidence scoring mechanism enables a human-in-the-loop workflow
-\citep{schroeder2025just, hakimi2026humans}. High-confidence predictions can
-be automatically accepted, while low-confidence predictions are flagged for
-human review. \citet{vasquez2026trust} emphasize the importance of calibrating
-LLM confidence scores for automated assessment, and the multi-call softmax
-approach implemented in \texttt{ollama-classifier} provides a principled
-foundation for such calibration.
-
-The library also supports an ``opt-out'' mechanism, where an additional
-``none of the above'' option is included among the candidate labels. This
-allows the model to abstain from classification when none of the provided
-options are appropriate, reducing the risk of forcing incorrect labels
-\citep{nunes2025rac}. In the evaluation by \citet{nunes2025rac}, the
-DeepSeek-R1 models demonstrated particularly well-calibrated opt-out behavior,
-with correct abstention rates exceeding 85\%.
+Confidence scores enable a human-in-the-loop workflow
+\citep{schroeder2025just, hakimi2026humans}: high-confidence predictions are
+auto-accepted, while low-confidence ones are flagged for review.
+\citet{vasquez2026trust} stress calibrating LLM confidence for automated
+assessment, and the multi-call scoring of \texttt{ollama-classifier} provides
+a principled basis for such calibration. The library also supports an opt-out
+mechanism that adds a ``None of the above'' option to the candidate set,
+letting the model abstain when no label fits \citep{nunes2025rac}.
 
 \subsection{Usage Example}
 
-Listing~\ref{lst:usage} demonstrates a basic classification workflow using
-\texttt{ollama-classifier}. The example shows how to initialize the classifier,
-define candidate labels with descriptions, and classify a product description.
+Listing~\ref{lst:usage} shows a basic classification. The
+\texttt{ClassificationResult} exposes the prediction, its confidence, the full
+probability distribution, and the diagnostics (\texttt{method},
+\texttt{approximate}, \texttt{coverage}, \texttt{n\_calls}) introduced above.
 
-\begin{lstlisting}[caption={Basic usage of \texttt{ollama-classifier} for
-  zero-shot product classification.},
-  label={lst:usage}]
-from ollama_classifier import OllamaClassifier
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[caption={Zero-shot classification with
+  \texttt{ollama-classifier} (v0.5.0 API).}, label={lst:usage}]
+from ollama_classifier import LLMClassifier
+from ollama_classifier.backends import OllamaBackend
 
-classifier = OllamaClassifier(model="llama3.2")
+clf = LLMClassifier(OllamaBackend(model="qwen2.5:3b-instruct"))
 
 choices = {
-    "Food and non-alcoholic beverages":
-        "Edible items, fresh or packaged food, drinks",
-    "Clothing and footwear":
-        "Garments, shoes, accessories for personal use",
-    "Electronics":
-        "Consumer electronic devices and accessories",
+    "Coffee and coffee substitutes": "Coffee, decaffeinated or not, roasted"
+                                     " or instant; substitutes and extracts.",
+    "Tea, mat\xe9 and other plant products for infusion":
+        "Green/black tea, herbal and fruit teas, rooibos, instant tea.",
+    "Soft drinks": "Sodas, lemonades, colas, and sparkling juices.",
 }
 
-result = classifier.classify(
-    text="Organic whole wheat pasta 500g",
-    choices=choices,
-)
-print(result)  # ClassificationResult(label=..., scores={...})
+result = clf.classify("Single-serve instant caf\xe9 latte sachet", choices)
+# ClassificationResult(
+#   prediction="Coffee and coffee substitutes",
+#   confidence=0.71,
+#   probabilities={"Coffee and coffee substitutes": 0.71, ...},
+#   method="multi_call", approximate=False, coverage={}, n_calls=4)
 \end{lstlisting}
+\end{minipage}
 
 % =============================================================================
-\section{Graphical User Interface}
-\label{sec:gui}
+\section{Ecosystem}
+\label{sec:ecosystem}
 % =============================================================================
 
-While the Python library provides a powerful programmatic interface, many
-potential users of LLM-based classification---domain experts, statisticians,
-data officers, and analysts---may lack programming expertise.
-\citet{amershi2019software} identify the gap between ML models and end-users
-as a critical barrier to adoption, \citet{he2021automl} demonstrate that
-automating ML workflows significantly lowers this barrier, and
-\citet{lazaridou2023ai} argue for democratizing access to AI tools for domain
-specialists.
+To extend \texttt{ollama-classifier} beyond a Python package, we maintain a
+desktop GUI and two cross-language ports that share the same API and scoring
+semantics.
 
-To address this challenge, we developed \texttt{ollama-classifier-gui}, a
-companion desktop application that provides a point-and-click interface for
-the full classification workflow. The application is built with Flet, a
-Python UI framework that enables cross-platform desktop applications from a
-single codebase. The application is publicly released as open-source
-software: the source code is hosted on
-GitHub,\footnote{\url{https://github.com/paluugi/ollama-classifier-gui}} and
-the package is distributed through the Python Package Index
-(PyPI),\footnote{\url{https://pypi.org/project/ollama-classifier-gui/}}
-where it can be installed directly with
-\texttt{pip\ install\ ollama-classifier-gui} \citep{ollama-classifier-gui}.
+\subsection{Graphical User Interface}
 
-\subsection{Architecture}
+Many potential users---domain experts, statisticians, and data officers---lack
+programming expertise, and bridging the gap between machine-learning (ML)
+models and end users is
+a known barrier to adoption \citep{amershi2019software, he2021automl,
+lazaridou2023ai}. \texttt{ollama-classifier-gui} \citep{ollama-classifier-gui}
+is a companion desktop application, built with Flet \citep{flet}, that exposes
+the full workflow through a five-tab interface: \textbf{Settings} (backend,
+endpoint, model, connection test, optional API key, theme); \textbf{Data
+Input} (comma-separated values (CSV) or Excel load, sheet selection, column
+mapping); \textbf{Schema}
+(manual or file-loaded labels, choice of the Classify or Score method, output
+format, optional system-prompt override); \textbf{Results} (live progress and
+Excel export of the data merged with classification columns); and
+\textbf{Info} (version and project links). The application supports the same
+four backends as the library and stores API keys in the operating system's
+native secure storage (Keychain on macOS, Credential Manager on Windows,
+libsecret on Linux). It installs with \texttt{uvx ollama-classifier-gui} or
+\texttt{pip install ollama-classifier-gui}.
 
-The GUI application wraps the \texttt{ollama-classifier} library as a backend
-engine, exposing its full functionality through an intuitive visual interface.
-The application supports the same multiple inference backends as the library
-(Ollama, vLLM, SGLang, llama.cpp), with all backend configuration managed
-through a dedicated settings panel. API keys, where required, are stored using
-the operating system's native secure storage mechanism (Keychain on macOS,
-Credential Manager on Windows, libsecret on Linux), ensuring that sensitive
-credentials are never stored in plain text.
+\subsection{Cross-Language Ports}
 
-\subsection{Four-Tab Workflow}
+\paragraph{R: \texttt{rollama-classifier}.}
+\texttt{rollama-classifier} \citep{rollama-classifier} is an R package
+(\texttt{library(rollama)}) that ports the full API to R, including the four
+backends, both \texttt{classify} and \texttt{generate}, their batch twins, and
+a \texttt{classification\_result} object with the same fields as the Python
+\texttt{ClassificationResult}. It installs from GitHub with
+\texttt{pak::pak("paluigi/rollama-classifier")}; a minimal call is
 
-The application is structured around a four-tab workflow that mirrors the
-classification pipeline: a \textbf{Settings} tab for configuring the inference
-backend, model, and connection parameters; a \textbf{Data Input} tab for
-loading text data from CSV or JSON files with column mapping and preview; a
-\textbf{Schema} tab for defining candidate labels and descriptions, selecting
-the classification strategy, and configuring custom system prompts; and a
-\textbf{Results} tab for viewing predicted labels and confidence scores in a
-structured table, with export to CSV or JSON. This workflow enables
-non-technical users to perform classification without encountering code or
-command-line interfaces.
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[language=R, caption={Minimal classification call
+  in R with \texttt{rollama-classifier}.}, label={lst:r-port}]
+library(rollama)
+be <- ollama_backend(model = "llama3.2")
+clf <- llm_classifier(be)
+res <- classify(clf, "I love this product!",
+                c("positive", "negative", "neutral"))
+res$prediction
+res$confidence
+\end{lstlisting}
+\end{minipage}
 
-\subsection{Significance}
+\paragraph{Rust: \texttt{ollama-classifier-rs}.}
+\texttt{ollama-classifier-rs} \citep{ollama-classifier-rs} is a Rust port
+(edition 2021) that mirrors the Python API---four backends,
+\texttt{classify} and \texttt{generate}, a \texttt{ClassificationResult}
+struct, and sync/async and batch variants---and is tracking Python v0.4.1.
+It is added to a project with \texttt{ollama-classifier-rs = "0.4"} in
+\texttt{Cargo.toml} \citep{rust}; a minimal call is
 
-The GUI application serves a critical role in the \texttt{ollama-classifier}
-ecosystem by bridging the gap between the technical capabilities of modern
-LLMs and the operational needs of domain practitioners. National Statistical
-Institutes, research teams, and government agencies that need to classify
-large volumes of text data---such as web-scraped product descriptions for
-Consumer Price Index compilation \citep{cavallo2013online, cavallo2017online,
-nunes2025rac}---can now leverage state-of-the-art LLM classification without
-requiring software engineering expertise.
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[language=Rust, caption={Minimal classification
+  call in Rust with \texttt{ollama-classifier-rs}.}, label={lst:rust-port}]
+use ollama_classifier_rs::LLMClassifier;
+use ollama_classifier_rs::backends::OllamaBackend;
+
+let be = OllamaBackend::new("llama3.2");
+let clf = LLMClassifier::new(be);
+let res = clf.classify(
+    "I love this product!",
+    vec!["positive", "negative", "neutral"],
+    None,
+)?;
+res.prediction
+res.confidence
+\end{lstlisting}
+\end{minipage}
+
+Both ports make the same constrained-output, confidence-bearing classification
+available to R and Rust users without re-implementing the methodology of
+Section~\ref{sec:confidence}.
 
 % =============================================================================
 \section{Application to Product Classification}
 \label{sec:application}
 % =============================================================================
 
-To illustrate the practical utility of \texttt{ollama-classifier}, we describe
-its application to the classification of consumer products into the COICOP
-2018 taxonomy \citep{un2018coicop}, a task of direct relevance to the
-compilation of Consumer Price Indices by National Statistical Institutes.
+To illustrate the practical utility of \texttt{ollama-classifier}, we apply it
+to the classification of consumer products into the COICOP 2018 taxonomy
+\citep{un2018coicop}, a task directly relevant to Consumer Price Index
+compilation by National Statistical Institutes \citep{cavallo2013online,
+cavallo2017online}.
 
 \subsection{The Classification Challenge}
 
-COICOP 2018 is an international standard developed by the United Nations to
-categorize household expenditures by function. The taxonomy comprises a
-four-level hierarchical structure, from broad divisions (e.g., ``Food and
-non-alcoholic beverages'') down to fine-grained subclasses (e.g., ``Other
- edible products''), encompassing 294 subclasses at the most granular level.
-Classifying web-scraped product descriptions into this taxonomy presents
-several challenges: high linguistic variability across retailers and countries,
-strong class imbalance, textual overlap between semantically similar
-subclasses, and the need for multilingual coverage.
+COICOP 2018 is an international standard that categorizes household
+expenditures through a four-level hierarchy, from broad divisions down to 294
+fine-grained subclasses. Classifying web-scraped product descriptions into
+this taxonomy is hard because of high linguistic variability across retailers
+and countries, strong class imbalance, textual overlap between semantically
+similar subclasses, and the need for multilingual coverage.
 
-\subsection{Retrieval-Augmented Classification Pipeline}
+%  SEC
+% \subsection{Retrieval-Augmented Classification Pipeline}
 
-\texttt{ollama-classifier} supports a full retrieval-augmented classification
-pipeline. The workflow proceeds in three stages:
+% \texttt{ollama-classifier} supports a full retrieval-augmented pipeline:
+% (i) synthetic exemplars are generated per subclass from official definitions
+% and embedded with models such as GTE \citep{chen2024gte} or E5
+% \citep{wang2022text}; (ii) for each product, the top-$k$ most similar
+% exemplars and their labels are retrieved; and (iii) the retrieved context is
+% folded into the classification prompt for the final generative decision.
+% Evaluated by \citet{nunes2025rac}, this pipeline reaches up to 0.80 accuracy
+% at the finest COICOP level with Qwen2.5-32B \citep{yang2024qwen2}, and even
+% compact models such as Mistral 7B \citep{jiang2023mistral} remain useful,
+% showing that effective classification does not require the largest models.
 
-\begin{enumerate}[leftmargin=*]
-  \item \textbf{Knowledge base construction}: Synthetic exemplars are generated
-        for each COICOP subclass using LLM prompts informed by official
-        definitions, then embedded using models such as GTE \citep{chen2024gte}
-        or E5 \citep{wang2022text}.
+\subsection{Experimental Setup}
+\label{sec:setup}
 
-  \item \textbf{Retrieval}: Given a product description, the system retrieves
-        the top-$k$ most semantically similar exemplars and their associated
-        COICOP labels.
+We benchmark \texttt{ollama-classifier} against BART-large-MNLI
+\citep{lewis2019bart, williams2018mnli}, a widely used zero-shot classifier
+that frames classification as natural language inference, and against
+scikit-llm \citep{ScikitLLM} through its \texttt{ZeroShotGPTClassifier}. All
+three operate on identical inputs and, for the generative models, share the
+same Qwen2.5 3B-Instruct backend \citep{yang2024qwen2} served by Ollama
+\citep{ollama}; scikit-llm reaches it through Ollama's OpenAI-compatible
+endpoint, isolating the effect of the scoring strategy. BART runs on CPU via
+HuggingFace \texttt{transformers}.
 
-  \item \textbf{Generative classification}: The retrieved context is
-        incorporated into the classification prompt, and the LLM performs the
-        final classification by reasoning over both the input text and the
-        retrieved evidence.
-\end{enumerate}
+The dataset comprises 637 manually labeled products from COICOP Division~01.2
+(Non-alcoholic beverages) \citep{nunes2025rac}, spanning seven subclasses
+with 15 to 189 products each. Candidate labels are the seven subclass names,
+optionally with their official COICOP definitions and an opt-out (``None of
+the above''). We run 24 variations: two BART and two scikit-llm
+configurations, four \texttt{ollama-classifier} \texttt{classify}
+configurations (names only, $+$opt-out, names$+$descriptions,
+descriptions$+$opt-out), and the same four configurations under
+\texttt{generate} at four call budgets $\texttt{max\_calls}\in\{1,3,5,8\}$.
+We report overall accuracy, macro precision/recall/F1, the percentage of
+items classified (excluding opt-outs), accuracy on classified items, and
+wall-clock time.
 
-This pipeline, evaluated by \citet{nunes2025rac}, achieves up to 0.80 accuracy
-at the finest COICOP level using the classification-by-definition approach with
-Qwen2.5-32B \citep{yang2024qwen2}. Notably, even compact models such as
-Mistral 7B \citep{jiang2023mistral} achieve strong overall performance (63.8\%
-accuracy at Level 4), demonstrating that effective classification does not
-require the largest available models.
-
-\subsection{Deployment Scenarios}
-
-\texttt{ollama-classifier} supports two primary deployment scenarios for this
-application:
-
-\begin{itemize}[leftmargin=*]
-  \item \textbf{Programmatic pipeline}: Data scientists and engineers can
-        integrate \texttt{ollama-classifier} into automated data processing
-        pipelines, using the batch and async APIs to classify large volumes of
-        products efficiently.
-
-  \item \textbf{GUI-assisted workflow}: Non-technical users can load product
-        datasets, define or import COICOP subclass labels, configure the
-        classification parameters, and review results through the GUI
-        application, with the option to export classified data for downstream
-        analysis.
-\end{itemize}
-
-In both scenarios, the local inference model ensures that product data---which
-may include commercially sensitive pricing information---never leaves the
-user's machine.
-
-\subsection{Experimental Evaluation}
-\label{sec:evaluation}
-
-To assess the practical performance of \texttt{ollama-classifier} on a
-fine-grained product classification task, we conducted a benchmark comparison
-against BART-large-MNLI \citep{lewis2019bart, williams2018mnli}, a widely-used
-zero-shot classifier that frames text classification as natural language
-inference (NLI).
-
-\subsubsection{Setup}
-
-We evaluated both classifiers on a manually-labeled dataset of 637 consumer
-products drawn from COICOP Division 01.2 (Non-alcoholic beverages), sourced
-from Zenodo. The dataset spans seven subclasses at the most granular level of
-the COICOP 2018 hierarchy, with class sizes ranging from 15 to 189 products.
-The candidate labels for each classifier are the seven subclass names (e.g.,
-``Coffee and coffee substitutes,'' ``Water,'' ``Soft drinks''), optionally
-accompanied by their official COICOP definitions and an opt-out option
-(``None of the above'').
-
-The baseline classifier is BART-large-MNLI \citep{lewis2019bart}, a 400M-parameter
-seq2seq model fine-tuned on the MultiNLI corpus \citep{williams2018mnli}. BART
-performs zero-shot classification by computing the entailment probability
-between the input text (premise) and a hypothesis of the form ``This text is
-about \textit{label}.'' Inference runs on CPU using the HuggingFace
-\texttt{transformers} library.
-
-The treatment classifier uses \texttt{ollama-classifier} with Qwen2.5 3B-Instruct
-\citep{yang2024qwen2} served through Ollama \citep{ollama} on a local machine.
-Classification uses the \texttt{classify} method, which combines
-constrained output generation with multi-call confidence scoring to produce
-both a predicted label and calibrated probability estimates over all
-candidate classes.
-
-The second baseline is scikit-llm \citep{ScikitLLM}, a zero-shot classifier
-with a scikit-learn-compatible interface. We use its
-\texttt{ZeroShotGPTClassifier} configured to issue requests against the same
-locally-hosted Qwen2.5 3B-Instruct model, redirected to Ollama through its
-OpenAI-compatible (\texttt{/v1}) endpoint.
-This ensures that all three classifiers operate on identical input data and
-share the same underlying language model, isolating the effect of the
-classification strategy. Unlike \texttt{ollama-classifier}, scikit-llm is a
-label-only classifier: it returns the predicted class but does not expose
-calibrated confidence scores or a full probability distribution over the
-candidate classes.
-
-We evaluate eight variations: two for BART (names only, names with opt-out),
-four for \texttt{ollama-classifier} (names only, names with opt-out, names with
-definitions, names with definitions and opt-out), and two for scikit-llm (names
-only, names with opt-out). This design allows us to isolate the effects of
-(i) the underlying model, (ii) the opt-out mechanism, and (iii) the inclusion
-of subclass definitions as additional context.
-
-We report overall accuracy, macro-averaged precision, recall, and F1-score,
-the percentage of items classified (excluding opt-outs), accuracy on classified
-items only, and wall-clock processing time.
-
-\subsubsection{Results}
-
-Table~\ref{tab:benchmark} summarizes the results across all eight variations.
+\subsection{Results}
+\label{sec:results}
 
 \begin{table}[htbp]
   \centering
-  \caption{Zero-shot classification results on COICOP Division 01.2
-           (637 products, 7 subclasses). BART uses NLI-based zero-shot
-           classification \citep{lewis2019bart}; Ollama uses the
-           \texttt{classify} method (constrained generation with multi-call
-           confidence scoring) with Qwen2.5 3B-Instruct \citep{yang2024qwen2};
-           scikit-llm \citep{ScikitLLM} uses \texttt{ZeroShotGPTClassifier}
-           against the same model through Ollama's OpenAI-compatible endpoint.
-           Macro-averaged metrics are computed over the seven subclasses.
-           ``Classif.'' is the percentage of items assigned a class label
-           (i.e., excluding opt-outs). Wall-clock time is reported in seconds.}
+  \caption{Zero-shot classification on COICOP Division~01.2 (637 products,
+           7 subclasses). BART uses NLI zero-shot classification
+           \citep{lewis2019bart}; Ollama \texttt{classify} uses multi-call
+           completion scoring and \texttt{generate} uses adaptive
+           trie-masked generation, both with Qwen2.5 3B-Instruct
+           \citep{yang2024qwen2}; scikit-llm \citep{ScikitLLM} uses
+           \texttt{ZeroShotGPTClassifier} against the same model. Macro
+           metrics are over the seven subclasses; ``Classif.'' is the share
+           of items assigned a label (opt-outs excluded); ``Calls'' and
+           ``Approx.'' report total API calls and the number of approximate
+           (partially covered) predictions for the \texttt{generate}
+           strategy. \dm\ denotes not applicable.}
   \label{tab:benchmark}
-  \begin{tabular}{lcccccc}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{lcccccccc}
     \toprule
     \textbf{Variation} & \textbf{Acc.} & \textbf{Prec.} & \textbf{Rec.}
-    & \textbf{F1} & \textbf{Classif.} & \textbf{Time} \\
-    & (\%) & (macro) & (macro) & (macro) & (\%) & (s) \\
+    & \textbf{F1} & \textbf{Classif.} & \textbf{Time} & \textbf{Calls}
+    & \textbf{Approx.} \\
+    & (\%) & (macro) & (macro) & (macro) & (\%) & (s) & & \\
     \midrule
-    BART (names only)            & 40.8 & 0.548 & 0.485 & 0.445 & ---   & 520.4 \\
-    BART (names + opt-out)       & 39.4 & 0.549 & 0.495 & 0.454 & 94.2  & 610.7 \\
+    BART (names only) & 40.8 & 0.548 & 0.485 & 0.445 & \dm & 444.4 & \dm & \dm \\
+    BART (names + opt-out) & 39.4 & 0.549 & 0.495 & 0.454 & 94.2 & 496.2 & \dm & \dm \\
     \addlinespace
-    Ollama (names only)          & 74.3 & 0.704 & 0.700 & 0.689 & ---   & 2150.7 \\
-    Ollama (names + opt-out)     & 71.9 & 0.683 & 0.704 & 0.678 & 96.4  & 2452.6 \\
-    Ollama (names + desc.)       & 70.8 & 0.684 & 0.704 & 0.677 & ---   & 2207.7 \\
-    Ollama (desc. + opt-out)     & 69.1 & 0.692 & 0.719 & 0.685 & 93.7  & 2486.6 \\
+    Ollama \texttt{classify} (names only) & 75.5 & 0.717 & 0.711 & 0.703 & \dm & 2965.0 & 4459 & 0 \\
+    Ollama \texttt{classify} (names + opt-out) & 74.7 & 0.710 & 0.721 & 0.705 & 97.6 & 3282.5 & 5096 & 0 \\
+    Ollama \texttt{classify} (names + desc.) & 74.4 & 0.708 & 0.745 & 0.712 & \dm & 3007.2 & 4459 & 0 \\
+    Ollama \texttt{classify} (desc. + opt-out) & 71.3 & 0.708 & 0.733 & 0.709 & 94.5 & 3397.4 & 5096 & 0 \\
     \addlinespace
-    scikit-llm (names only)      & 73.5 & 0.690 & 0.689 & 0.667 & ---   & 204.5 \\
-    scikit-llm (names + opt-out) & 68.0 & 0.631 & 0.701 & 0.651 & 89.6  & 199.9 \\
+    scikit-llm (names only) & 73.5 & 0.690 & 0.689 & 0.667 & \dm & 176.0 & \dm & \dm \\
+    scikit-llm (names + opt-out) & 68.0 & 0.631 & 0.701 & 0.651 & 89.6 & 182.7 & \dm & \dm \\
+    \addlinespace
+    Ollama \texttt{generate}, names only (mc=1) & 73.8 & 0.679 & 0.692 & 0.669 & \dm & 465.0 & 637 & 637 \\
+    Ollama \texttt{generate}, names only (mc=3) & 62.8 & 0.605 & 0.589 & 0.581 & \dm & 1428.2 & 1911 & 637 \\
+    Ollama \texttt{generate}, names only (mc=5) & 56.2 & 0.527 & 0.539 & 0.518 & \dm & 2246.0 & 3185 & 637 \\
+    Ollama \texttt{generate}, names only (mc=8) & 50.9 & 0.502 & 0.511 & 0.502 & \dm & 2724.8 & 3886 & 0 \\
+    Ollama \texttt{generate}, names + opt-out (mc=1) & 70.6 & 0.651 & 0.684 & 0.649 & 95.1 & 449.5 & 637 & 637 \\
+    Ollama \texttt{generate}, names + opt-out (mc=3) & 61.9 & 0.597 & 0.598 & 0.573 & 96.2 & 1410.7 & 1911 & 637 \\
+    Ollama \texttt{generate}, names + opt-out (mc=5) & 52.7 & 0.504 & 0.534 & 0.488 & 97.0 & 2222.9 & 3185 & 637 \\
+    Ollama \texttt{generate}, names + opt-out (mc=8) & 44.3 & 0.463 & 0.497 & 0.470 & 92.8 & 3106.9 & 4517 & 0 \\
+    Ollama \texttt{generate}, names + desc. (mc=1) & 72.8 & 0.700 & 0.727 & 0.697 & \dm & 453.9 & 637 & 637 \\
+    Ollama \texttt{generate}, names + desc. (mc=3) & 65.0 & 0.640 & 0.666 & 0.635 & \dm & 1439.8 & 1911 & 637 \\
+    Ollama \texttt{generate}, names + desc. (mc=5) & 61.7 & 0.582 & 0.639 & 0.583 & \dm & 2298.2 & 3185 & 637 \\
+    Ollama \texttt{generate}, names + desc. (mc=8) & 61.4 & 0.575 & 0.633 & 0.579 & \dm & 2789.5 & 3894 & 0 \\
+    Ollama \texttt{generate}, desc. + opt-out (mc=1) & 67.8 & 0.693 & 0.712 & 0.677 & 94.5 & 445.9 & 637 & 637 \\
+    Ollama \texttt{generate}, desc. + opt-out (mc=3) & 61.5 & 0.641 & 0.644 & 0.602 & 96.7 & 1422.2 & 1911 & 637 \\
+    Ollama \texttt{generate}, desc. + opt-out (mc=5) & 59.5 & 0.587 & 0.618 & 0.555 & 97.2 & 2283.9 & 3185 & 637 \\
+    Ollama \texttt{generate}, desc. + opt-out (mc=8) & 57.5 & 0.540 & 0.605 & 0.550 & 96.5 & 3141.3 & 4515 & 0 \\
     \bottomrule
-  \end{tabular}
+  \end{tabular}}
 \end{table}
 
-\textbf{Model comparison.}
+\paragraph{Accuracy.}
 \texttt{ollama-classifier} with Qwen2.5 3B-Instruct substantially outperforms
-BART-large-MNLI across all configurations. The best Ollama variation (names
-only, no opt-out) achieves 74.3\% overall accuracy compared to 40.8\% for the
-best BART variation, representing a 33.5 percentage-point improvement.
-scikit-llm, which drives the same Qwen2.5 3B-Instruct model through a single
-constrained-generation call rather than multi-call scoring, achieves 73.5\%
-accuracy---within one percentage point of \texttt{ollama-classifier}. This
-confirms that the generative model's advantage over the NLI baseline stems from
-its superior ability to reason over fine-grained semantic distinctions rather
-than from the scoring protocol. The comparable accuracy of scikit-llm, however,
-comes at the cost of discarding confidence information: because it returns only
-the predicted label, the probability-based triage strategies analyzed below are
-inapplicable to it. In terms of runtime, scikit-llm is the fastest classifier
-($\approx$200\,s, roughly $10\times$ faster than the multi-call Ollama
-variations at $\approx$2150--2490\,s), reflecting its single-call design, while
-BART runs on CPU at $\approx$520--610\,s.
+BART-large-MNLI. The best \texttt{classify} variation (names only) reaches
+75.5\% accuracy against 40.8\% for the best BART variation, a 34.7
+percentage-point gain. scikit-llm, which drives the same model through a
+single constrained call rather than multi-call scoring, reaches 73.5\%---within
+two points of \texttt{classify}---confirming that the generative model's
+advantage stems from semantic reasoning rather than the scoring protocol.
+scikit-llm is also the fastest classifier ($\approx$176--183\,s), versus
+$\approx$2{,}965--3{,}397\,s for multi-call \texttt{classify} and
+$\approx$444--496\,s for BART on CPU. The \texttt{generate} strategy trades
+accuracy for cost control: at \texttt{max\_calls}\,=\,1 it matches scikit-llm
+(73.8\%, 637 calls), but accuracy falls monotonically as the budget grows,
+because higher call budgets expose the strategy to its approximate regime---at
+\texttt{max\_calls}\,$\leq$\,5 all 637 predictions are flagged approximate
+(partial token coverage), and only at \texttt{max\_calls}\,=\,8 does coverage
+complete (zero approximate items), yet accuracy is then lowest
+(Figure~\ref{fig:generate}). The ``names + descriptions'' configuration decays
+most gracefully and remains the strongest generate configuration at
+\texttt{max\_calls}\,=\,8 (61.4\%).
 
-\textbf{Opt-out behavior.}
-When the opt-out option is enabled, BART opts out of 37 products (5.8\%),
-Ollama opts out of 23 products (3.6\%), and scikit-llm opts out of 66 products
-(10.4\%). Among classified items, Ollama's accuracy rises from 74.3\% to
-74.6\% with opt-out enabled, and scikit-llm's rises from 73.5\% to 75.8\%,
-suggesting that the generative models correctly identify their least-confident
-predictions. BART's accuracy on classified items similarly improves from
-40.8\% to 41.8\%, but the magnitude of improvement is far smaller, consistent
-with BART's lower overall discriminative capability. scikit-llm's more
-aggressive abstention---nearly three times Ollama's opt-out rate---reduces its
-overall accuracy to 68.0\% but yields the highest on-classified accuracy of the
-three classifiers.
+\paragraph{Opt-out behavior.}
+Enabling opt-out, BART abstains on 37 products (5.8\%), Ollama
+\texttt{classify} on 15 (2.4\%), and scikit-llm on 66 (10.4\%). On the
+classified subset, accuracy rises for all three (e.g.,
+\texttt{classify} 75.5\%$\to$76.5\%; scikit-llm 73.5\%$\to$75.8\%),
+indicating that the generative models correctly identify their least-confident
+predictions; scikit-llm's more aggressive abstention yields the highest
+on-classified accuracy.
 
-\textbf{Effect of subclass definitions.}
-Including official COICOP definitions alongside subclass names does not improve
-classification performance for Ollama. The names-only variation (74.3\%)
-outperforms the names-with-descriptions variation (70.8\%) by 3.5 percentage
-points, indicating that definitional context actively harms performance in this
-domain. This suggests that
-for Division 01.2---where subclass names such as ``Coffee and coffee
-substitutes'' and ``Tea, m\'at\'e and other plant products for infusion'' are
-already highly distinctive---additional definitional context provides marginal
-benefit and may occasionally introduce noise. This finding aligns with the
-results of \citet{nunes2025rac}, who report that classification-by-definition
-is most beneficial at higher COICOP levels where class boundaries are less
-clear.
+\paragraph{Effect of subclass definitions.}
+Adding official COICOP definitions alongside subclass names does not help
+\texttt{classify}: names-only (75.5\%) beats names-with-descriptions (74.4\%).
+For Division~01.2, where subclass names such as ``Coffee and coffee
+substitutes'' are already highly distinctive, definitions add marginal signal
+and occasional noise---consistent with \citet{nunes2025rac}, who find
+classification-by-definition most beneficial at higher, more ambiguous COICOP
+levels.
 
-\textbf{Confidence and calibration.}
-Because scikit-llm returns only the predicted label, the following analysis
-covers the six confidence-bearing variations of BART and
-\texttt{ollama-classifier}.
-Table~\ref{tab:confidence} summarizes the relationship between classifier
-confidence and prediction correctness. Both models exhibit a statistically
-significant positive correlation between the confidence score assigned to the
-predicted label and whether the prediction is correct. BART's Pearson
-correlation coefficients range from $r = 0.347$ to $r = 0.351$, while Ollama's
-range from $r = 0.402$ to $r = 0.452$ (all $p < 0.001$). As a stronger,
-directional test, one-tailed Welch's $t$-tests confirm that incorrect
-predictions carry significantly lower mean confidence than correct ones in every
-variation ($t = 8.76$--$9.91$, all $p < 0.001$). Together, the correlations and
-$t$-tests establish that confidence discriminates correctness rather than being
-merely a monotonic artifact of the score distribution.
+\paragraph{Confidence and calibration.}
+Because scikit-llm is label-only, the confidence analysis covers the 22
+confidence-bearing variations (BART, \texttt{classify}, \texttt{generate}).
+Table~\ref{tab:confidence} reports, for each variation, the mean predicted-label
+confidence on correct and incorrect predictions, the point-biserial
+correlation $r$ between confidence and correctness, the mean score gap (top
+minus second probability) on correct and incorrect predictions, the one-tailed
+Welch $t$ statistics for both metrics, and the calibration and ranking
+metrics---Expected Calibration Error (ECE), the area under the receiver
+operating characteristic curve (ROC-AUC) for confidence and for the score gap,
+and the Brier score.
 
-The two models differ markedly in their confidence distributions. Ollama's mean
-confidence for correct predictions is 0.954--0.959 across variations, compared
-to 0.509--0.532 for BART. Notably, Ollama's mean confidence for
-\emph{incorrect} predictions (0.804--0.820) exceeds BART's mean confidence for
-\emph{correct} predictions. This indicates that Ollama's probability
-estimates are compressed into a narrow high-confidence band, making absolute
-threshold-based triage less effective.
-
-The mean score gap---the difference between the two highest class
-probabilities---further illuminates this pattern. For Ollama, the mean
-gap on incorrect predictions is 0.85--0.86 (median $\approx 0.99$), showing a
-strong preference for the wrong label over the correct one. BART's gap on
-incorrect predictions is 0.23--0.25, reflecting a more diffuse probability
-distribution where the model is less decisive. These findings suggest that
-confidence thresholds are informative for both models, but finer-grained triage
-strategies---such as examining the score gap or the probability assigned to the
-ground-truth class---may be more effective for Ollama than a simple threshold on
-the predicted label's confidence.
+Both confidence and the score gap discriminate correctness. Welch $t$ tests
+(correct $>$ incorrect) are highly significant for every variation
+($p<0.001$ after Benjamini--Hochberg correction within each metric family),
+and the point-biserial correlations are positive throughout ($r$ between 0.30
+and 0.54). The two generative strategies are miscalibrated, but in opposite
+directions. \texttt{classify} is \emph{underconfident}: its mean confidence
+sits well below its accuracy (e.g., names only: 0.59 vs.\ 0.76), so its
+reliability curve lies \emph{above} the diagonal, with empirical accuracy
+exceeding confidence in every bin (0.55$\to$0.79; 0.75$\to$0.95).
+\texttt{generate} is \emph{overconfident}: at low call budgets the mean
+confidence on incorrect predictions (0.82--0.85) exceeds BART's mean
+confidence on \emph{correct} predictions, and its curve bends below the
+diagonal. BART is well calibrated (ECE$\approx$0.03--0.06), close to the
+diagonal. Both generative strategies carry a large ECE
+(\texttt{classify} $\approx$0.15--0.20; \texttt{generate}
+$\approx$0.17--0.22), so their absolute probabilities are unreliable and call
+for opposite post-hoc corrections---sharpening for \texttt{classify},
+softening for \texttt{generate}. The reliability curves in
+Figure~\ref{fig:calibration} make the asymmetry visible: BART tracks the
+diagonal, \texttt{classify} sits above it, and \texttt{generate} sits below.
+Ranking quality, by contrast, favors the generative methods: the ROC-AUC of
+confidence is 0.70 for BART but 0.79--0.83 for \texttt{classify}, indicating
+that even though the absolute confidence values are poorly calibrated, they
+order predictions by likelihood of correctness substantially better than
+chance and better than BART.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=\textwidth]{confidence_boxplots}
-  \caption{Distribution of predicted-label confidence for correct versus
-  incorrect predictions across the six confidence-bearing variations. For both
-  models, incorrect predictions concentrate at lower confidence, but Ollama's
-  distributions are compressed in a high-confidence band (median $\geq 0.95$
-  even for most incorrect cases).}
-  \label{fig:boxplots}
+  \includegraphics[width=0.95\textwidth]{calibration_curve}
+  \caption{Reliability (calibration) curves: empirical accuracy against mean
+           confidence within equal-width bins, by choice configuration. The
+           dashed diagonal is perfect calibration. BART stays close to the
+           diagonal; \texttt{classify} lies \emph{above} it
+           (underconfidence---confidence below empirical accuracy), while
+           \texttt{generate} lies \emph{below} it (overconfidence---confidence
+           above empirical accuracy).}
+  \label{fig:calibration}
 \end{figure}
 
-Figure~\ref{fig:boxplots} visualizes the confidence distributions underlying
-these statistics. The compression of Ollama's probabilities is immediately
-apparent: even its incorrect predictions typically carry confidence above
-0.80, overlapping with BART's \emph{correct} predictions. This compression
-limits the granularity of absolute thresholding for Ollama, whereas BART's
-broader, better-separated distributions make a single confidence cutoff a more
-effective triage signal.
+\begin{table}[htbp]
+  \centering
+  \caption{Confidence and calibration across the 22 confidence-bearing
+           variations. ``Conf'' is the mean predicted-label confidence on
+           correct/incorrect predictions; ``Gap'' is the mean score gap
+           (top minus second probability); $r$ is the point-biserial
+           correlation between confidence and correctness; $t$ is the
+           one-tailed Welch statistic (correct $>$ incorrect) for each
+           metric (all $p<0.001$ after BH correction). ECE uses 10
+           equal-width bins; AUC is the ROC-AUC of each score against
+           correctness; Brier is the mean squared error of confidence.
+           scikit-llm is omitted (label-only).}
+  \label{tab:confidence}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{lccccccccccc}
+    \toprule
+    \textbf{Variation} & \textbf{Conf.} & \textbf{Conf.} & $\boldsymbol{r}$
+    & \textbf{Gap} & \textbf{Gap} & $\boldsymbol{t}$ & $\boldsymbol{t}$
+    & \textbf{ECE} & \textbf{AUC} & \textbf{AUC} & \textbf{Brier} \\
+    & (corr.) & (inc.) & & (corr.) & (inc.) & (conf.) & (gap) & & (conf.) & (gap) & \\
+    \midrule
+    BART (names only) & 0.532 & 0.414 & 0.347 & 0.315 & 0.197 & 8.93 & 6.68 & 0.055 & 0.697 & 0.640 & 0.215 \\
+    BART (names + opt-out) & 0.509 & 0.392 & 0.351 & 0.295 & 0.179 & 8.80 & 6.67 & 0.028 & 0.700 & 0.644 & 0.214 \\
+    \addlinespace
+    Ollama \texttt{classify} (names only) & 0.632 & 0.442 & 0.488 & 0.442 & 0.210 & 14.77 & 14.36 & 0.170 & 0.820 & 0.809 & 0.171 \\
+    Ollama \texttt{classify} (names + opt-out) & 0.617 & 0.413 & 0.493 & 0.438 & 0.203 & 15.38 & 14.86 & 0.196 & 0.831 & 0.817 & 0.176 \\
+    Ollama \texttt{classify} (names + desc.) & 0.642 & 0.460 & 0.445 & 0.478 & 0.234 & 12.93 & 13.48 & 0.149 & 0.788 & 0.799 & 0.175 \\
+    Ollama \texttt{classify} (desc. + opt-out) & 0.627 & 0.425 & 0.484 & 0.475 & 0.206 & 15.30 & 16.07 & 0.177 & 0.821 & 0.831 & 0.174 \\
+    \addlinespace
+    Ollama \texttt{generate} (names only, mc=1) & 0.975 & 0.844 & 0.434 & 0.952 & 0.730 & 8.58 & 8.64 & 0.203 & 0.831 & 0.829 & 0.202 \\
+    Ollama \texttt{generate} (names only, mc=3) & 0.907 & 0.677 & 0.500 & 0.819 & 0.402 & 13.65 & 13.11 & 0.194 & 0.832 & 0.805 & 0.213 \\
+    Ollama \texttt{generate} (names only, mc=5) & 0.847 & 0.620 & 0.460 & 0.703 & 0.311 & 13.02 & 12.10 & 0.186 & 0.800 & 0.741 & 0.229 \\
+    Ollama \texttt{generate} (names only, mc=8) & 0.809 & 0.581 & 0.449 & 0.643 & 0.256 & 12.66 & 12.05 & 0.188 & 0.779 & 0.716 & 0.236 \\
+    Ollama \texttt{generate} (names + opt-out, mc=1) & 0.977 & 0.849 & 0.426 & 0.957 & 0.741 & 7.98 & 8.01 & 0.202 & 0.818 & 0.816 & 0.200 \\
+    Ollama \texttt{generate} (names + opt-out, mc=3) & 0.907 & 0.696 & 0.453 & 0.817 & 0.443 & 11.64 & 11.06 & 0.189 & 0.808 & 0.780 & 0.218 \\
+    Ollama \texttt{generate} (names + opt-out, mc=5) & 0.840 & 0.629 & 0.423 & 0.690 & 0.327 & 11.57 & 10.75 & 0.200 & 0.773 & 0.715 & 0.245 \\
+    Ollama \texttt{generate} (names + opt-out, mc=8) & 0.797 & 0.584 & 0.414 & 0.613 & 0.266 & 11.00 & 9.95 & 0.208 & 0.760 & 0.685 & 0.253 \\
+    Ollama \texttt{generate} (names + desc., mc=1) & 0.955 & 0.831 & 0.378 & 0.921 & 0.716 & 8.10 & 8.08 & 0.193 & 0.783 & 0.782 & 0.207 \\
+    Ollama \texttt{generate} (names + desc., mc=3) & 0.939 & 0.734 & 0.493 & 0.888 & 0.524 & 12.49 & 12.26 & 0.217 & 0.834 & 0.828 & 0.221 \\
+    Ollama \texttt{generate} (names + desc., mc=5) & 0.894 & 0.693 & 0.436 & 0.803 & 0.446 & 11.72 & 11.39 & 0.202 & 0.794 & 0.777 & 0.231 \\
+    Ollama \texttt{generate} (names + desc., mc=8) & 0.829 & 0.678 & 0.316 & 0.683 & 0.429 & 8.29 & 7.81 & 0.167 & 0.705 & 0.683 & 0.244 \\
+    Ollama \texttt{generate} (desc. + opt-out, mc=1) & 0.961 & 0.823 & 0.420 & 0.933 & 0.703 & 8.92 & 9.00 & 0.205 & 0.822 & 0.821 & 0.210 \\
+    Ollama \texttt{generate} (desc. + opt-out, mc=3) & 0.941 & 0.709 & 0.536 & 0.894 & 0.474 & 13.98 & 13.90 & 0.220 & 0.853 & 0.849 & 0.216 \\
+    Ollama \texttt{generate} (desc. + opt-out, mc=5) & 0.875 & 0.663 & 0.440 & 0.768 & 0.393 & 11.92 & 11.51 & 0.181 & 0.794 & 0.768 & 0.224 \\
+    Ollama \texttt{generate} (desc. + opt-out, mc=8) & 0.805 & 0.655 & 0.304 & 0.649 & 0.383 & 7.94 & 7.86 & 0.176 & 0.684 & 0.675 & 0.250 \\
+    \bottomrule
+  \end{tabular}}
+\end{table}
 
-The accuracy--coverage trade-off implied by thresholding is quantified in
-Figure~\ref{fig:tradeoff}. The selective-accuracy curves (left) show that, for
-both models, restricting to high-confidence predictions raises accuracy as the
-threshold increases; the coverage curves (right) show the corresponding
-fraction of items retained. BART offers a smoother trade-off, steadily gaining
-accuracy as coverage falls. Ollama's accuracy also rises with the threshold,
-but because its confidence is concentrated above 0.9, large gains in selective
-accuracy are achieved only by sacrificing substantial coverage. For practical
-deployment, this means that ranking items by confidence (or by score gap) and
-reviewing the lowest-ranked tail is more effective for Ollama than applying a
-hard probability cutoff.
+\paragraph{Threshold-based discrimination.}
+A Practitioner does not need well-calibrated probabilities to deploy triage:
+it suffices that a threshold on confidence, or on the score gap, separates
+correct from incorrect predictions. The distributional basis for this
+separation is visible in the confidence and score-gap boxplots
+(Figures~\ref{fig:conf-boxplots} and \ref{fig:gap-boxplots}): across all 22
+confidence-bearing variations, correct predictions consistently concentrate at
+higher values than incorrect ones. Table~\ref{tab:threshold} reports, for the
+six headline variations, the ROC-AUC of each score and the Youden-optimal
+threshold ($J=\text{TPR}-\text{FPR}$, true positive rate minus false
+positive rate) with the resulting selective accuracy
+(accuracy among items above the threshold) and coverage. For
+\texttt{classify}, both scores discriminate strongly: AUC is 0.79--0.83
+whether one ranks by confidence or by the score gap, and abstaining below the
+Youden-optimal margin threshold lifts accuracy from a 71--75\% baseline to
+89--93\% while retaining 55--66\% of the items (e.g., names only: 75.5\%
+$\to$ 92.8\% at 58.6\% coverage). The score gap is as informative as
+confidence and sometimes more so (desc.\ + opt-out: AUC 0.831 vs.\ 0.821).
+BART discriminates more weakly (AUC $\approx$ 0.70), and its optimal margin
+threshold is aggressive (coverage $\approx$ 27--33\%). The selective-accuracy
+and coverage curves in Figures~\ref{fig:tradeoff} and \ref{fig:tradeoff-margin}
+show the same effect continuously: for both ranking variables, accuracy rises
+as the threshold tightens, and the margin offers a second, complementary
+operating axis. This validates threshold-based triage for \texttt{classify}
+with either score, and quantifies the accuracy--coverage trade-off that
+distinguishes \texttt{ollama-classifier} from the label-only scikit-llm.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Threshold discrimination for the six headline variations. AUC is
+           the ROC-AUC of each score against correctness; the remaining
+           columns report the Youden-optimal threshold ($J=\text{TPR}-\text{FPR}$)
+           and the selective accuracy (accuracy among items with score
+           $\geq$ threshold) and coverage (\% retained) at that threshold, for
+           confidence and for the score gap (margin) separately.}
+  \label{tab:threshold}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{lcccccccc}
+    \toprule
+    & \multicolumn{4}{c}{\textbf{Confidence threshold}}
+    & \multicolumn{4}{c}{\textbf{Margin (score-gap) threshold}} \\
+    \cmidrule(lr){2-5}\cmidrule(lr){6-9}
+    \textbf{Variation} & \textbf{AUC} & \textbf{thr.} & \textbf{sel.\ acc.}
+    & \textbf{cov.} & \textbf{AUC} & \textbf{thr.} & \textbf{sel.\ acc.}
+    & \textbf{cov.} \\
+    & & & (\%) & (\%) & & & (\%) & (\%) \\
+    \midrule
+    BART (names only) & 0.697 & 0.42 & 54.4 & 53.4 & 0.640 & 0.34 & 60.9 & 27.3 \\
+    BART (names + opt-out) & 0.700 & 0.41 & 56.3 & 51.8 & 0.644 & 0.27 & 59.5 & 33.3 \\
+    \addlinespace
+    Ollama \texttt{classify} (names only) & 0.820 & 0.52 & 91.3 & 64.7 & 0.809 & 0.36 & 92.8 & 58.6 \\
+    Ollama \texttt{classify} (names + opt-out) & 0.831 & 0.53 & 92.4 & 59.3 & 0.817 & 0.34 & 93.0 & 60.0 \\
+    Ollama \texttt{classify} (names + desc.) & 0.788 & 0.54 & 89.0 & 61.2 & 0.799 & 0.30 & 89.0 & 65.6 \\
+    Ollama \texttt{classify} (desc. + opt-out) & 0.821 & 0.55 & 93.4 & 55.0 & 0.831 & 0.32 & 91.8 & 62.6 \\
+    \bottomrule
+  \end{tabular}}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{confidence_boxplots}
+  \caption{Confidence distributions for correct (green) and incorrect (red)
+           predictions across all 22 confidence-bearing variations. Each panel
+           shows the boxplot and individual data points (jittered) for one
+           variation, annotated with the sample size $N$ and the one-tailed
+           Welch $t$-test $p$-value (correct $>$ incorrect). Correct
+           predictions consistently concentrate at higher confidence than
+           incorrect ones.}
+  \label{fig:conf-boxplots}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{scoregap_boxplots}
+  \caption{Score-gap (top minus second-highest class probability)
+           distributions for correct and incorrect predictions across all 22
+           confidence-bearing variations. Same layout as
+           Figure~\ref{fig:conf-boxplots}. The score gap discriminates
+           correctness comparably to confidence, with correct predictions
+           showing larger margins.}
+  \label{fig:gap-boxplots}
+\end{figure}
 
 \begin{figure}[htbp]
   \centering
   \begin{subfigure}{0.49\textwidth}
     \centering
     \includegraphics[width=\textwidth]{selective_accuracy}
-    \caption{Selective accuracy: accuracy among items whose confidence meets or
-    exceeds the threshold.}
+    \caption{Selective accuracy vs.\ confidence threshold.}
     \label{fig:selective-accuracy}
   \end{subfigure}
   \hfill
   \begin{subfigure}{0.49\textwidth}
     \centering
     \includegraphics[width=\textwidth]{coverage_curve}
-    \caption{Coverage: fraction of items retained at each confidence
-    threshold.}
+    \caption{Coverage vs.\ confidence threshold.}
     \label{fig:coverage}
   \end{subfigure}
-  \caption{Accuracy--coverage trade-off under confidence thresholding. BART
-  exhibits a smoother, better-separated trade-off; Ollama's high-confidence
-  compression means coverage remains high until thresholds approach 0.9, so
-  ranking-based triage outperforms hard cutoffs.}
+  \caption{Accuracy--coverage trade-off under thresholding on the predicted-label
+           confidence, by choice configuration. BART offers a smoother trade-off;
+           the generative methods gain selective accuracy quickly because their
+           confidence is concentrated high.}
   \label{fig:tradeoff}
 \end{figure}
 
-\begin{table}[htbp]
+\begin{figure}[htbp]
   \centering
-  \caption{Confidence analysis across classification variations.
-           ``Conf (correct)'' and ``Conf (incorrect)'' report the mean
-           predicted-label confidence for correct and incorrect predictions,
-           respectively. ``Corr.~$r$'' is the Pearson correlation between
-           predicted-label confidence and correctness. ``Score gap'' is the
-           mean difference between the highest and second-highest class
-           probabilities. ``Welch $t$'' is the one-tailed Welch's $t$-statistic
-           testing whether incorrect predictions have lower mean confidence than
-           correct ones (all $p < 0.001$). scikit-llm is omitted because it is
-           a label-only classifier that does not produce confidence scores.}
-  \label{tab:confidence}
-  \begin{tabular}{lccccc}
-    \toprule
-    \textbf{Variation} & \textbf{Conf.} & \textbf{Conf.} & \textbf{Corr.}
-    & \textbf{Score} & \textbf{Welch} \\
-    & \textbf{(correct)} & \textbf{(incorrect)} & $\boldsymbol{r}$
-    & \textbf{gap} & $\boldsymbol{t}$ \\
-    \midrule
-    BART (names only)         & 0.532 & 0.414 & 0.347 & 0.245 & 8.93 \\
-    BART (names + opt-out)    & 0.509 & 0.392 & 0.351 & 0.228 & 8.80 \\
-    \addlinespace
-    Ollama (names only)       & 0.954 & 0.820 & 0.402 & 0.862 & 8.76 \\
-    Ollama (names + opt-out)  & 0.959 & 0.810 & 0.437 & 0.864 & 9.16 \\
-    Ollama (names + desc.)    & 0.956 & 0.804 & 0.452 & 0.848 & 9.91 \\
-    Ollama (desc. + opt-out)  & 0.954 & 0.815 & 0.422 & 0.861 & 8.91 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+  \begin{subfigure}{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{selective_accuracy_margin}
+    \caption{Selective accuracy vs.\ score-gap threshold.}
+    \label{fig:selective-accuracy-margin}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{coverage_curve_margin}
+    \caption{Coverage vs.\ score-gap threshold.}
+    \label{fig:coverage-margin}
+  \end{subfigure}
+  \caption{Accuracy--coverage trade-off under thresholding on the score gap
+           (margin between the two highest class probabilities). The margin
+           discriminates correctness about as well as confidence for the
+           generative methods, providing a complementary triage axis.}
+  \label{fig:tradeoff-margin}
+\end{figure}
 
-\textbf{Practical implications.}
-These results demonstrate that a compact 3B-parameter model served locally
-through Ollama can match or exceed the zero-shot classification performance of
-a dedicated NLI model on a fine-grained product taxonomy task---without
-requiring fine-tuning, API access, or data to leave the user's machine. The
-constrained output generation mechanism ensures that all predictions are valid
-class labels, eliminating the post-processing required by unconstrained LLM
-outputs. The opt-out mechanism provides a principled way to flag uncertain
-predictions for human review, a critical feature for production deployment in
-official statistics. Crucially, the calibrated confidence scores are what
-distinguish \texttt{ollama-classifier} from a faster label-only classifier such
-as scikit-llm: although scikit-llm matches the generative model's accuracy at a
-fraction of the runtime, the absence of confidence information precludes the
-selective-accuracy triage shown in Figure~\ref{fig:tradeoff}, which lets
-analysts trade coverage for precision automatically.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\textwidth]{generate_sweep}
+  \caption{Adaptive \texttt{generate} strategy: accuracy, mean confidence,
+           ECE, and AUC against the call budget (\texttt{max\_calls}), by
+           choice configuration. The vertical dotted line marks the boundary
+           between the approximate regime (\texttt{max\_calls}\,$\leq$\,5,
+           all predictions approximate) and the exact point
+           (\texttt{max\_calls}\,=\,8).}
+  \label{fig:generate}
+\end{figure}
 
-\subsubsection{Limitations of the Evaluation}
+\subsection{Limitations of the Evaluation}
 
-Several caveats apply. The evaluation covers only one COICOP division (01.2,
-Non-alcoholic beverages), and performance may differ at other divisions where
-class boundaries are more ambiguous. We evaluate a single Ollama model
-(Qwen2.5 3B-Instruct); larger models may achieve higher accuracy, while smaller
-models may fall below the observed threshold. The BART baseline uses CPU
-inference, and GPU acceleration could narrow the runtime gap. Finally, we do
-not include a fine-tuned classifier baseline; such a comparison would require
-task-specific training data and is left to future work. Additionally, the
-scikit-llm comparison is confined to accuracy and opt-out behavior: because it
-is a label-only classifier, it could not be included in the confidence and
-calibration analysis, so the relative calibration of its predictions remains
-unassessed.
+Several caveats apply. The evaluation covers a single COICOP division (01.2),
+and performance may differ where class boundaries are more ambiguous. We
+evaluate one Ollama model (Qwen2.5 3B-Instruct); larger models may score
+higher. The BART baseline runs on CPU, and GPU acceleration could narrow the
+runtime gap. We do not include a fine-tuned classifier baseline, which would
+require task-specific training data. Finally, because scikit-llm is
+label-only, it is excluded from the confidence, calibration, and threshold
+analyses.
 
 % =============================================================================
 \section{Discussion}
@@ -852,56 +963,37 @@ unassessed.
 
 \subsection{Design Decisions}
 
-Several design decisions distinguish \texttt{ollama-classifier} from
-alternative approaches:
-
-\textbf{Local-first inference.} By defaulting to Ollama for local model
-serving, the library prioritizes privacy and cost-effectiveness. While
-cloud-based APIs offer access to larger models, the trade-off is often
-unacceptable in sensitive domains. The support for multiple backends (vLLM,
-SGLang, llama.cpp) ensures that users can choose the inference engine that
-best matches their hardware and deployment requirements.
-
-\textbf{No fine-tuning.} The library deliberately avoids any fine-tuning
-step, relying entirely on prompting and retrieval augmentation. This design
-choice maximizes flexibility: users can switch models, add or remove classes,
-and adapt to new domains without retraining. The trade-off is that
-fine-tuned models may achieve higher accuracy on specific tasks, but at the
-cost of reduced generality and increased computational requirements.
-
-\textbf{Constrained output.} Enforcing valid class labels through prompt
-design and, where available, JSON schema constraints is essential for
-production deployment. Unconstrained LLM outputs are prone to hallucination,
-verbosity, and formatting inconsistencies that would break downstream
-processing pipelines.
+Three decisions distinguish \texttt{ollama-classifier}. First, it is
+\emph{local-first}: defaulting to Ollama prioritizes privacy and
+cost-effectiveness, while the vLLM, SGLang, and llama.cpp backends let users
+match the engine to their hardware. Second, it deliberately avoids
+fine-tuning, relying on prompting and retrieval; this maximizes flexibility
+(models, classes, and domains change without retraining) at the cost of
+task-specific accuracy. Third, it exposes two scoring strategies with an
+explicit cost--accuracy trade-off: \texttt{classify} spends one call per label
+for exact, calibrated probabilities, whereas \texttt{generate} reconstructs
+scores from a budget-controlled number of constrained calls and flags
+approximate results through its coverage field---letting users choose speed
+over exactness and inspect partial coverage when they do.
 
 \subsection{Limitations}
 
-Several limitations should be acknowledged. First, the quality of
-classification depends on the underlying model's capabilities. While recent
-open-source models have improved dramatically, smaller models (below 3B
-parameters) may struggle with complex or ambiguous classification tasks. The
-results reported by \citet{nunes2025rac} show that models with fewer than
-1.5B parameters achieve only marginal classification accuracy, suggesting a
-practical lower bound for effective deployment.
-
-Second, bias and fairness concerns apply to LLM-based classification
-\citep{gallegos2024bias}. The models' pre-training data may encode societal
-biases that affect classification outcomes, particularly when classifying
-texts related to demographic, economic, or cultural categories. Users should
-be aware of these risks and consider bias auditing tools
-\citep{yuan2026biasahead} when deploying \texttt{ollama-classifier} in
-sensitive applications.
-
-Third, the multi-call scoring strategy trades computational cost for
-calibrated confidence estimates. For classification tasks with many candidate
-labels, the $N$-call approach may be prohibitively expensive, and users may
-need to rely on the faster generate-only strategy.
-
-Finally, while the GUI application significantly lowers the barrier to entry,
-it currently operates as a single-user desktop application. Multi-user,
-server-based deployments would require additional infrastructure that is
-beyond the current scope.
+Classification quality ultimately depends on the underlying model, and models
+below roughly 3B parameters struggle on complex taxonomies;
+\citet{nunes2025rac} report that models with fewer than 1.5B parameters are
+only marginally useful. LLM-based classification is also subject to
+data-driven bias \citep{gallegos2024bias}, and deployers in sensitive settings
+should audit for it \citep{yuan2026biasahead}. The multi-call \texttt{classify}
+strategy trades computation for calibrated confidence and may be expensive for
+very large label sets, where the budget-controlled \texttt{generate} strategy
+is preferable. Our calibration results show that the generative strategies are miscalibrated
+in opposite directions---\texttt{classify} is underconfident and
+\texttt{generate} is overconfident (both high ECE)---while remaining strong
+rankers (high AUC); practical deployment should therefore prefer ranking-based
+triage (Section~\ref{sec:results}) or post-hoc calibration, noting that
+\texttt{classify} and \texttt{generate} require opposite corrections
+(sharpening vs.\ softening). Finally, the GUI is a single-user desktop application;
+multi-user, server-based deployments are left to future work.
 
 % =============================================================================
 \section{Conclusion}
@@ -909,28 +1001,20 @@ beyond the current scope.
 % =============================================================================
 
 We have presented \texttt{ollama-classifier}, an open-source Python library
-that enables zero-shot and few-shot text classification using locally-hosted
-Large Language Models. The library provides constrained output generation,
-confidence scoring, batch processing, and multi-backend support, making
-advanced LLM-based classification accessible without fine-tuning, API keys,
-or internet connectivity. An R port, \texttt{rollama-classifier}%
-~\citep{rollama-classifier}, further extends this accessibility to the R
-community.
-
-The companion GUI application extends this accessibility to non-technical
-users, providing an intuitive four-tab workflow for the complete classification
-pipeline---from backend configuration and data loading to schema definition
-and results review. This combination of a programmatic library and a graphical
-interface positions \texttt{ollama-classifier} as a practical tool for
-bridging the gap between the capabilities of modern LLMs and the operational
-needs of domain practitioners in fields such as official statistics, economic
-research, and data governance.
-
-Future work will focus on expanding the retrieval-augmented classification
-pipeline within the library, improving confidence calibration through
-temperature scaling and conformal prediction methods, and developing a
-web-based interface to support collaborative, multi-user classification
-workflows.
+for zero-shot and few-shot text classification with locally-hosted LLMs. The
+library provides two confidence-bearing scoring strategies---multi-call
+completion scoring and adaptive trie-masked generation---across four
+inference backends, with constrained output generation, batch and asynchronous
+APIs, and a retrieval-augmented pipeline. A desktop GUI and cross-language
+ports in R (\texttt{rollama-classifier}) and Rust
+(\texttt{ollama-classifier-rs}) extend the same API to non-programmers and to
+other ecosystems. On a COICOP product-classification benchmark, a compact 3B
+model served locally substantially outperforms a BART NLI baseline and matches
+scikit-llm, while its confidence scores and score gaps---though miscalibrated
+in absolute terms---reliably discriminate correct from incorrect predictions
+and support effective threshold-based triage. Future work will tighten
+calibration through temperature scaling and conformal prediction, broaden the
+retrieval-augmented pipeline, and add a collaborative web interface.
 
 % =============================================================================
 % References

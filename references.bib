@@ -19,7 +19,7 @@
 @software{ollama-classifier,
   title = {ollama-classifier: A Python Library for Retrieval-Augmented
            Classification Using Local Large Language Models},
-  author = {Palumbo, Luigi},
+  author = {Palumbo, Luigi and Yu, Mengting},
   url = {https://pypi.org/project/ollama-classifier/},
   year = {2025},
   annote = {This is the main subject of the paper. The ollama-classifier library
@@ -35,8 +35,38 @@
   title = {rollama-classifier: An R Port of ollama-classifier for
            Text Classification with Constrained Output and Confidence
            Scoring},
-  author = {Palumbo, Luigi},
+  author = {Palumbo, Luigi and Yu, Mengting},
   url = {https://github.com/paluigi/rollama-classifier},
+  year = {2026},
+}
+
+@software{ollama-classifier-rs,
+  title = {ollama-classifier-rs: A Rust Port of ollama-classifier for
+           Text Classification with Constrained Output and Confidence
+           Scoring},
+  author = {Palumbo, Luigi and Yu, Mengting},
+  url = {https://github.com/paluigi/ollama-classifier-rs},
+  howpublished = {crates.io: https://crates.io/crates/ollama-classifier-rs},
+  version = {0.4.1},
+  year = {2026},
+  annote = {Rust port of the Python library, edition 2021. Full API parity
+            (four backends, classify/generate, ClassificationResult, batch and
+            async variants) as of Python v0.4.1.}
+}
+
+@software{flet,
+  title = {Flet: Build Multi-Platform Desktop, Web, and Mobile Apps in Python},
+  author = {{Flet Contributors}},
+  url = {https://flet.dev},
+  year = {2026},
+  annote = {Python UI framework used by ollama-classifier-gui to build the
+            cross-platform desktop application from a single codebase.}
+}
+
+@misc{rust,
+  title = {The Rust Programming Language},
+  author = {{Rust Project Developers}},
+  howpublished = {\url{https://www.rust-lang.org}},
   year = {2026},
 }
 
@@ -110,10 +140,10 @@
 @article{nunes2025rac,
   title = {Classification at Scale: A Retrieval-Augmented Classification
            Framework for {COICOP} 2018 Consumer Products},
-  author = {Nunes, In{\^e}s and Palumbo, Luigi and Bacco, Luca},
-  journal = {Manuscript under review},
-  year = {2025},
-  url = {https://github.com/paluigi/ollama-classifier},
+  author = {Nunes, In{\^e}s and Palumbo, Luigi and Vollero, Luca and Laureti, Tiziana and Bacco, Luca},
+  journal = {19th meeting of the Ottawa Group on Price Indices},
+  year = {2026},
+  url = {https://ottawagroup2026.stat.gov.pl/en/DownloadFile?nrSesji=11&nrWystapienia=13&nrPliku=3},
   annote = {Foundational work by the same author of ollama-classifier,
             describing the RAC framework that the library implements. This paper
             demonstrates the methodology on COICOP product classification,
@@ -495,7 +525,7 @@
 
 @article{palumbo2026ollama-classifier,
   title        = {ollama-classifier: A Python wrapper around the Ollama Python SDK for text classification with constrained output and confidence scoring},
-  author       = {Palumbo, Luigi and Yu, Mengting and Camassa, Carolina},
+  author       = {Palumbo, Luigi and Yu, Mengting},
   year         = {2026},
   url          = {https://pypi.org/project/ollama-classifier/},
   annote       = {The primary research paper describing the ollama-classifier library itself. It details the Python wrapper around the Ollama SDK, focusing on constrained output generation (forcing the LLM to output only valid class labels) and confidence scoring, which are critical for deploying LLMs as reliable classifiers in non-technical GUI environments.}
@@ -511,6 +541,7 @@
 }
 
 @article{touvron2023llama1,
+  title        = {LLaMA: Open and Efficient Foundation Language Models},
   author       = {Touvron, Hugo and Lavril, Thibaut and Izacard, Gautier and Martinet, Xavier and Lachaux, Marie-Anne and Lacroix, Timothée and Rozière, Baptiste and Gorat, Naman and Hambro, Eric and Azhar, Faisal and others},
   journal      = {arXiv preprint arXiv:2302.13971},
   year         = {2023},
@@ -594,7 +625,7 @@
 
 @software{cvxtz2023llmclassifier,
   title        = {llmclassifier: Building Reliable Text Classification Pipelines with {LLMs}},
-  author       = {{CVxTz}},
+  author       = {Youness, Mansar},
   year         = {2023},
   url          = {https://github.com/CVxTz/llmclassifier},
   annote       = {An open-source Python library designed to build text classification pipelines using LLMs. Represents the competitive landscape and related work for ollama-classifier. Unlike ollama-classifier, which focuses on local inference via Ollama and retrieval augmentation, this library generally targets API-based models, highlighting ollama-classifier's unique value proposition of privacy and offline capability.}
@@ -662,11 +693,11 @@
 }
 
 @software{ollama-classifier-gui,
-  author = {Palumbo, Luigi},
+  author = {Palumbo, Luigi and Yu, Mengting},
   title = {ollama-classifier-gui: A Desktop GUI for Retrieval-Augmented
            Classification with Local Large Language Models},
   year = {2026},
-  url = {https://github.com/paluugi/ollama-classifier-gui},
+  url = {https://github.com/paluigi/ollama-classifier-gui},
   howpublished = {PyPI: https://pypi.org/project/ollama-classifier-gui/},
   annote = {The companion desktop application of the ollama-classifier library,
             built with Flet. It exposes the full classification workflow
