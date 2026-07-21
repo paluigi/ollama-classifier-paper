@@ -1059,12 +1059,19 @@ def save_threshold_discrimination(td_df: pd.DataFrame) -> None:
 # =============================================================================
 
 
-def main() -> None:
-    df = pd.read_excel(RESULTS_XLSX, sheet_name=SHEET)
-    long_df = build_long_frame(df)
+def plot_standard_figures(
+    long_df: pd.DataFrame,
+    stats_df: pd.DataFrame,
+    conf_pvals: dict,
+    gap_pvals: dict,
+) -> None:
+    """Render the figures shared by every analysis run (full sweep or mc=1).
 
-    stats_df, conf_pvals, gap_pvals = compute_stats(long_df)
-
+    Both boxplots, the four accuracy/coverage threshold curves, and the
+    calibration diagram. The generate-specific figure differs per driver
+    (``plot_generate_sweep`` for the full sweep; an external comparison for the
+    mc=1 view) and is emitted separately by the caller.
+    """
     plot_boxplots(
         long_df,
         value_col="confidence",
@@ -1122,11 +1129,24 @@ def main() -> None:
         xlabel="Score-gap threshold",
     )
     plot_calibration(long_df)
-    plot_generate_sweep(stats_df)
 
+
+def save_all_tables(long_df: pd.DataFrame, stats_df: pd.DataFrame) -> None:
+    """Write the t-test, confidence, and threshold-discrimination artifacts."""
     save_ttest_results(stats_df)
     save_confidence_table(stats_df)
     save_threshold_discrimination(build_threshold_discrimination(long_df, stats_df))
+
+
+def main() -> None:
+    df = pd.read_excel(RESULTS_XLSX, sheet_name=SHEET)
+    long_df = build_long_frame(df)
+
+    stats_df, conf_pvals, gap_pvals = compute_stats(long_df)
+
+    plot_standard_figures(long_df, stats_df, conf_pvals, gap_pvals)
+    plot_generate_sweep(stats_df)
+    save_all_tables(long_df, stats_df)
 
     print("t-test results (confidence):")
     print(

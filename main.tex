@@ -105,13 +105,14 @@
   \texttt{ollama-classifier}, an open-source Python library for zero-shot and
   few-shot text classification with locally-hosted LLMs. The library exposes
   two complementary scoring strategies---multi-call completion scoring
-  (\texttt{classify}) and adaptive, budget-controlled constrained generation
+  (\texttt{classify}) and hierarchical constrained generation
   (\texttt{generate})---both yielding a full probability distribution and a
-  confidence score, and both available across four inference
+  confidence score; \texttt{generate} does so in a single call, with optional
+  mass-preserving refinement. Both are available across four inference
   backends (Ollama, vLLM, SGLang, llama.cpp) through a unified interface. A
   no-code desktop graphical user interface (GUI)
   (\texttt{ollama-classifier-gui}) and cross-language
-  ports in R (\texttt{rollama-classifier}) and Rust
+  ports in R (\texttt{rollama}) and Rust
   (\texttt{ollama-classifier-rs}) extend the same API to non-programmers and
   to other language ecosystems. We benchmark the library against
   BART-large-MNLI and scikit-llm on a COICOP (Classification of Individual
@@ -227,8 +228,9 @@ Several open-source projects address LLM-based classification.
 pipelines on top of API-hosted models. \texttt{scikit-llm}
 \citep{ScikitLLM} offers a scikit-learn-compatible interface for zero-shot
 and few-shot classification and can be pointed at a local model server
-through an OpenAI-compatible endpoint. Unlike \texttt{ollama-classifier},
-scikit-llm is a label-only classifier: it returns the predicted class but no
+through an OpenAI-compatible endpoint. \texttt{scikit-ollama} \citep{skollama} extends the 
+approach to Ollama-hosted models. Unlike \texttt{ollama-classifier},
+scikit-llm and scikit-ollama are label-only classifiers: they return the predicted class but no
 calibrated confidence scores or full probability distribution, which precludes
 the uncertainty-aware triage workflows analyzed in
 Section~\ref{sec:application}. \texttt{ollama-classifier} further
@@ -305,21 +307,17 @@ batch variants.
 
 \begin{table}[htbp]
   \centering
-  \caption{Core methods of the \texttt{ollama-classifier} API. Both
-           \texttt{generate} and \texttt{classify} return a
-           \texttt{ClassificationResult} carrying the prediction, a confidence
-           score, a full probability distribution, and diagnostics. Each
-           method has an asynchronous counterpart prefixed with \texttt{a}
-           and a batch variant.}
+  \caption{Core methods of the \texttt{ollama-classifier} API.}
   \label{tab:api}
   \begin{tabular}{lp{8.2cm}}
     \toprule
     \textbf{Method} & \textbf{Description} \\
     \midrule
-    \texttt{generate()} & Adaptive trie-masked constrained generation.
-                          Reconstructs per-label log-probabilities from one
-                          to \texttt{max\_calls} calls; budget-controlled,
-                          may be approximate under partial coverage. \\
+    \texttt{generate()} & Hierarchical constrained generation. A single
+                          constrained call reconstructs a full probability
+                          distribution from divergence-aware log-probabilities;
+                          optional \texttt{max\_calls} refines it through
+                          mass-preserving cluster reproportioning. \\
     \texttt{classify()} & Multi-call completion scoring. Makes one call per
                           candidate label and returns exact, calibrated
                           probabilities. \\
@@ -327,6 +325,12 @@ batch variants.
                           for many texts. \\
     \bottomrule
   \end{tabular}
+  % \footnotesize{Both \texttt{generate} and \texttt{classify} return a
+  %   \texttt{ClassificationResult} carrying the prediction, a confidence
+  %   score, a full probability distribution, and diagnostics. Each
+  %   method has an asynchronous counterpart prefixed with \texttt{a}
+  %   and a batch variant.
+  % }
 \end{table}
 
 \subsection{Confidence Estimation}
@@ -357,27 +361,39 @@ entirely unscoreable maps to probability zero, with a uniform fallback when
 all labels fail. This strategy is always exact and issues one call per label
 (\texttt{method}\,=\,\texttt{"multi\_call"}, \texttt{approximate}\,=\,\texttt{False}).
 
-\paragraph{Adaptive trie-masked generation (\texttt{generate}).}
-Candidate labels are tokenized into a prefix trie, and each constrained call
-is restricted to trie tokens while returning the \texttt{top\_logprobs} of
-\emph{every} sibling alternative, so labels the model did not emit are still
-scored. A breadth-first search over clusters of labels sharing a scored
-prefix spends between one and \texttt{max\_calls} calls. For each label
-$y_i$ relative to the generated (``winning'') path $y^\ast$, the divergence
-point
+\paragraph{Hierarchical constrained generation (\texttt{generate}).}
+Candidate labels are tokenized into a prefix trie, and a single constrained
+call is restricted to trie tokens while returning the \texttt{top\_logprobs}
+of \emph{every} sibling alternative, so labels the model did not emit are still
+scored. For each label $y_i$ relative to the generated (``winning'') path
+$y^\ast$, the divergence point
 \[
   d(y_i,y^\ast)=\min\bigl\{k:\text{tok}_k(y_i)\neq\text{tok}_k(y^\ast)\bigr\}
 \]
 marks the last position at which the label and the winner share a
 conditioning prefix; the label is scored exactly on tokens $0,\dots,d$ and
-excluded beyond it. Partial scores feed the same geometric-mean and softmax
-as \texttt{classify}. The reported \texttt{coverage}$(y_i)$ is the fraction
-of the label's tokens that were scored, and \texttt{approximate} is
-\texttt{True} whenever any label has coverage below one. Setting
-\texttt{max\_calls}\,=\,1 yields a single fast, approximate call; larger
-budgets resolve more clusters adaptively; and \texttt{max\_calls}\,=\,\texttt{None}
-exhausts the frontier to produce exact scores (degenerating to one call per
-label in the worst case).
+excluded beyond it. Because all log-probabilities come from the same
+constraint context, the resulting distribution is internally consistent.
+Partial scores feed the same geometric-mean and softmax as \texttt{classify},
+so \texttt{max\_calls}\,=\,1 already yields a full probability distribution
+and a confidence score in a single call. The reported
+\texttt{coverage}$(y_i)$ is the fraction of the label's tokens that were
+scored, and \texttt{approximate} is \texttt{True} whenever any label has
+coverage below one.
+
+When \texttt{max\_calls}\,>\,1, supplementary calls refine the distribution
+through \emph{mass-preserving cluster reproportioning}. A \emph{cluster} is a
+group of two or more non-winning labels that share a scored prefix but diverge
+from the winner (and from one another) at a later position. For each cluster,
+a constrained call over only that cluster's labels yields divergence-based
+relative weights (a softmax of the per-label geometric-mean scores that sums to
+one); the cluster's \emph{total} probability mass is then redistributed among
+its members according to these weights. Because the reproportioning preserves
+the between-group totals, accuracy is \emph{monotone non-decreasing} in
+\texttt{max\_calls}: additional calls can only sharpen the distribution
+\emph{within} a group, never move mass between groups. Setting
+\texttt{max\_calls}\,=\,\texttt{None} resolves every cluster recursively and
+converges to \texttt{classify} when every label is fully resolved.
 
 \paragraph{Backend differentiation.}
 All four backends expose per-token log-probabilities and support both
@@ -394,11 +410,7 @@ so trie boundaries match those of real constrained generation.
 
 \begin{table}[htbp]
   \centering
-  \caption{Backend differentiation in \texttt{ollama-classifier} (v0.5.0).
-           All backends expose per-token log-probabilities and support both
-           \texttt{classify} and \texttt{generate}; they differ in the
-           constrained-output mechanism and in how \texttt{classify} obtains
-           per-label scores.}
+  \caption{Backend differentiation in \texttt{ollama-classifier} (v0.6.0).}
   \label{tab:backends}
   \resizebox{\textwidth}{!}{%
   \begin{tabular}{lll}
@@ -411,6 +423,10 @@ so trie boundaries match those of real constrained generation.
     llama.cpp & GBNF (grammar-based Backus--Naur Form) grammar & Forced constrained generation \\
     \bottomrule
   \end{tabular}}
+  \footnotesize{All backends expose per-token log-probabilities and support both
+          \texttt{classify} and \texttt{generate}; they differ in the
+          constrained-output mechanism and in how \texttt{classify} obtains
+          per-label scores.}
 \end{table}
 
 \subsection{Constrained Output Generation}
@@ -444,7 +460,7 @@ probability distribution, and the diagnostics (\texttt{method},
 
 \noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[caption={Zero-shot classification with
-  \texttt{ollama-classifier} (v0.5.0 API).}, label={lst:usage}]
+  \texttt{ollama-classifier} (v0.6.0 API).}, label={lst:usage}]
 from ollama_classifier import LLMClassifier
 from ollama_classifier.backends import OllamaBackend
 
@@ -499,17 +515,18 @@ libsecret on Linux). It installs with \texttt{uvx ollama-classifier-gui} or
 
 \subsection{Cross-Language Ports}
 
-\paragraph{R: \texttt{rollama-classifier}.}
-\texttt{rollama-classifier} \citep{rollama-classifier} is an R package
+\paragraph{R: \texttt{rollama}.}
+\texttt{rollama} \citep{rollama-classifier} is an R package
 (\texttt{library(rollama)}) that ports the full API to R, including the four
-backends, both \texttt{classify} and \texttt{generate}, their batch twins, and
+backends, both \texttt{classify} and \texttt{generate} (with the
+mass-preserving cluster reproportioning of v0.6.0), their batch twins, and
 a \texttt{classification\_result} object with the same fields as the Python
 \texttt{ClassificationResult}. It installs from GitHub with
 \texttt{pak::pak("paluigi/rollama-classifier")}; a minimal call is
 
 \noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language=R, caption={Minimal classification call
-  in R with \texttt{rollama-classifier}.}, label={lst:r-port}]
+  in R with \texttt{rollama}.}, label={lst:r-port}]
 library(rollama)
 be <- ollama_backend(model = "llama3.2")
 clf <- llm_classifier(be)
@@ -524,9 +541,11 @@ res$confidence
 \texttt{ollama-classifier-rs} \citep{ollama-classifier-rs} is a Rust port
 (edition 2021) that mirrors the Python API---four backends,
 \texttt{classify} and \texttt{generate}, a \texttt{ClassificationResult}
-struct, and sync/async and batch variants---and is tracking Python v0.4.1.
-It is added to a project with \texttt{ollama-classifier-rs = "0.4"} in
-\texttt{Cargo.toml} \citep{rust}; a minimal call is
+struct, and sync/async and batch variants---and tracks Python v0.6.0,
+including the hierarchical constrained-generation strategy with
+mass-preserving cluster reproportioning. It is added to a project with
+\texttt{ollama-classifier-rs = "0.6"} in \texttt{Cargo.toml} \citep{rust};
+a minimal call is
 
 \noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language=Rust, caption={Minimal classification
@@ -601,11 +620,15 @@ The dataset comprises 637 manually labeled products from COICOP Division~01.2
 (Non-alcoholic beverages) \citep{nunes2025rac}, spanning seven subclasses
 with 15 to 189 products each. Candidate labels are the seven subclass names,
 optionally with their official COICOP definitions and an opt-out (``None of
-the above''). We run 24 variations: two BART and two scikit-llm
+the above''). We run 12 distinct variations: two BART and two scikit-llm
 configurations, four \texttt{ollama-classifier} \texttt{classify}
 configurations (names only, $+$opt-out, names$+$descriptions,
-descriptions$+$opt-out), and the same four configurations under
-\texttt{generate} at four call budgets $\texttt{max\_calls}\in\{1,3,5,8\}$.
+descriptions$+$opt-out), and the same four configurations under \texttt{generate}
+at its default single-call setting (\texttt{max\_calls}\,=\,1). The full
+$\texttt{max\_calls}\in\{1,3,5,8\}$ sweep was also executed; because the seven
+COICOP subclass names share no token prefixes, the mass-preserving
+reproportioning path is never triggered and the four budgets yield byte-identical
+predictions, so only the \texttt{max\_calls}\,=\,1 results are reported.
 We report overall accuracy, macro precision/recall/F1, the percentage of
 items classified (excluding opt-outs), accuracy on classified items, and
 wall-clock time.
@@ -616,17 +639,7 @@ wall-clock time.
 \begin{table}[htbp]
   \centering
   \caption{Zero-shot classification on COICOP Division~01.2 (637 products,
-           7 subclasses). BART uses NLI zero-shot classification
-           \citep{lewis2019bart}; Ollama \texttt{classify} uses multi-call
-           completion scoring and \texttt{generate} uses adaptive
-           trie-masked generation, both with Qwen2.5 3B-Instruct
-           \citep{yang2024qwen2}; scikit-llm \citep{ScikitLLM} uses
-           \texttt{ZeroShotGPTClassifier} against the same model. Macro
-           metrics are over the seven subclasses; ``Classif.'' is the share
-           of items assigned a label (opt-outs excluded); ``Calls'' and
-           ``Approx.'' report total API calls and the number of approximate
-           (partially covered) predictions for the \texttt{generate}
-           strategy. \dm\ denotes not applicable.}
+          7 subclasses).}
   \label{tab:benchmark}
   \resizebox{\textwidth}{!}{%
   \begin{tabular}{lcccccccc}
@@ -636,35 +649,40 @@ wall-clock time.
     & \textbf{Approx.} \\
     & (\%) & (macro) & (macro) & (macro) & (\%) & (s) & & \\
     \midrule
-    BART (names only) & 40.8 & 0.548 & 0.485 & 0.445 & \dm & 444.4 & \dm & \dm \\
-    BART (names + opt-out) & 39.4 & 0.549 & 0.495 & 0.454 & 94.2 & 496.2 & \dm & \dm \\
+    BART (names only) & 40.8 & 0.548 & 0.485 & 0.445 & \dm & 428.8 & \dm & \dm \\
+    BART (names + opt-out) & 39.4 & 0.549 & 0.495 & 0.454 & 94.2 & 501.0 & \dm & \dm \\
     \addlinespace
-    Ollama \texttt{classify} (names only) & 75.5 & 0.717 & 0.711 & 0.703 & \dm & 2965.0 & 4459 & 0 \\
-    Ollama \texttt{classify} (names + opt-out) & 74.7 & 0.710 & 0.721 & 0.705 & 97.6 & 3282.5 & 5096 & 0 \\
-    Ollama \texttt{classify} (names + desc.) & 74.4 & 0.708 & 0.745 & 0.712 & \dm & 3007.2 & 4459 & 0 \\
-    Ollama \texttt{classify} (desc. + opt-out) & 71.3 & 0.708 & 0.733 & 0.709 & 94.5 & 3397.4 & 5096 & 0 \\
+    Ollama \texttt{classify} (names only) & 75.5 & 0.717 & 0.711 & 0.703 & \dm & 2967.7 & 4459 & 0 \\
+    Ollama \texttt{classify} (names + opt-out) & 74.7 & 0.710 & 0.721 & 0.705 & 97.6 & 3325.4 & 5096 & 0 \\
+    Ollama \texttt{classify} (names + desc.) & 74.4 & 0.708 & 0.745 & 0.712 & \dm & 3053.8 & 4459 & 0 \\
+    Ollama \texttt{classify} (desc. + opt-out) & 71.3 & 0.708 & 0.733 & 0.709 & 94.5 & 3446.1 & 5096 & 0 \\
     \addlinespace
-    scikit-llm (names only) & 73.5 & 0.690 & 0.689 & 0.667 & \dm & 176.0 & \dm & \dm \\
-    scikit-llm (names + opt-out) & 68.0 & 0.631 & 0.701 & 0.651 & 89.6 & 182.7 & \dm & \dm \\
+    scikit-llm (names only) & 73.5 & 0.690 & 0.689 & 0.667 & \dm & 176.9 & \dm & \dm \\
+    scikit-llm (names + opt-out) & 68.0 & 0.631 & 0.701 & 0.651 & 89.6 & 183.5 & \dm & \dm \\
     \addlinespace
-    Ollama \texttt{generate}, names only (mc=1) & 73.8 & 0.679 & 0.692 & 0.669 & \dm & 465.0 & 637 & 637 \\
-    Ollama \texttt{generate}, names only (mc=3) & 62.8 & 0.605 & 0.589 & 0.581 & \dm & 1428.2 & 1911 & 637 \\
-    Ollama \texttt{generate}, names only (mc=5) & 56.2 & 0.527 & 0.539 & 0.518 & \dm & 2246.0 & 3185 & 637 \\
-    Ollama \texttt{generate}, names only (mc=8) & 50.9 & 0.502 & 0.511 & 0.502 & \dm & 2724.8 & 3886 & 0 \\
-    Ollama \texttt{generate}, names + opt-out (mc=1) & 70.6 & 0.651 & 0.684 & 0.649 & 95.1 & 449.5 & 637 & 637 \\
-    Ollama \texttt{generate}, names + opt-out (mc=3) & 61.9 & 0.597 & 0.598 & 0.573 & 96.2 & 1410.7 & 1911 & 637 \\
-    Ollama \texttt{generate}, names + opt-out (mc=5) & 52.7 & 0.504 & 0.534 & 0.488 & 97.0 & 2222.9 & 3185 & 637 \\
-    Ollama \texttt{generate}, names + opt-out (mc=8) & 44.3 & 0.463 & 0.497 & 0.470 & 92.8 & 3106.9 & 4517 & 0 \\
-    Ollama \texttt{generate}, names + desc. (mc=1) & 72.8 & 0.700 & 0.727 & 0.697 & \dm & 453.9 & 637 & 637 \\
-    Ollama \texttt{generate}, names + desc. (mc=3) & 65.0 & 0.640 & 0.666 & 0.635 & \dm & 1439.8 & 1911 & 637 \\
-    Ollama \texttt{generate}, names + desc. (mc=5) & 61.7 & 0.582 & 0.639 & 0.583 & \dm & 2298.2 & 3185 & 637 \\
-    Ollama \texttt{generate}, names + desc. (mc=8) & 61.4 & 0.575 & 0.633 & 0.579 & \dm & 2789.5 & 3894 & 0 \\
-    Ollama \texttt{generate}, desc. + opt-out (mc=1) & 67.8 & 0.693 & 0.712 & 0.677 & 94.5 & 445.9 & 637 & 637 \\
-    Ollama \texttt{generate}, desc. + opt-out (mc=3) & 61.5 & 0.641 & 0.644 & 0.602 & 96.7 & 1422.2 & 1911 & 637 \\
-    Ollama \texttt{generate}, desc. + opt-out (mc=5) & 59.5 & 0.587 & 0.618 & 0.555 & 97.2 & 2283.9 & 3185 & 637 \\
-    Ollama \texttt{generate}, desc. + opt-out (mc=8) & 57.5 & 0.540 & 0.605 & 0.550 & 96.5 & 3141.3 & 4515 & 0 \\
+    Ollama \texttt{generate}, names only & 73.8 & 0.679 & 0.692 & 0.669 & \dm & 472.0 & 637 & 637 \\
+    Ollama \texttt{generate}, names + opt-out & 70.6 & 0.651 & 0.684 & 0.649 & 95.1 & 445.5 & 637 & 637 \\
+    Ollama \texttt{generate}, names + desc. & 72.8 & 0.700 & 0.727 & 0.697 & \dm & 451.0 & 637 & 637 \\
+    Ollama \texttt{generate}, desc. + opt-out & 67.8 & 0.693 & 0.712 & 0.677 & 94.5 & 442.7 & 637 & 637 \\
     \bottomrule
   \end{tabular}}
+  \footnotesize{
+    BART uses NLI zero-shot classification
+    \citep{lewis2019bart}; Ollama \texttt{classify} uses multi-call
+    completion scoring and \texttt{generate} uses hierarchical
+    constrained generation, both with Qwen2.5 3B-Instruct
+    \citep{yang2024qwen2}; scikit-llm \citep{ScikitLLM} uses
+    \texttt{ZeroShotGPTClassifier} against the same model. Macro
+    metrics are over the seven subclasses; ``Classif.'' is the share
+    of items assigned a label (opt-outs excluded); ``Calls'' and
+    ``Approx.'' report total API calls and the number of approximate
+    (partially covered) predictions. For \texttt{generate} only the
+    default single-call setting (\texttt{max\_calls}\,=\,1) is shown:
+    on this task the seven subclass names share no token prefixes, so
+    the mass-preserving cluster-reproportioning path is never triggered
+    and larger budgets leave the results unchanged (all 637 predictions
+    approximate, one call per item). \dm\ denotes not applicable.
+  }
 \end{table}
 
 \paragraph{Accuracy.}
@@ -675,18 +693,19 @@ percentage-point gain. scikit-llm, which drives the same model through a
 single constrained call rather than multi-call scoring, reaches 73.5\%---within
 two points of \texttt{classify}---confirming that the generative model's
 advantage stems from semantic reasoning rather than the scoring protocol.
-scikit-llm is also the fastest classifier ($\approx$176--183\,s), versus
-$\approx$2{,}965--3{,}397\,s for multi-call \texttt{classify} and
-$\approx$444--496\,s for BART on CPU. The \texttt{generate} strategy trades
-accuracy for cost control: at \texttt{max\_calls}\,=\,1 it matches scikit-llm
-(73.8\%, 637 calls), but accuracy falls monotonically as the budget grows,
-because higher call budgets expose the strategy to its approximate regime---at
-\texttt{max\_calls}\,$\leq$\,5 all 637 predictions are flagged approximate
-(partial token coverage), and only at \texttt{max\_calls}\,=\,8 does coverage
-complete (zero approximate items), yet accuracy is then lowest
-(Figure~\ref{fig:generate}). The ``names + descriptions'' configuration decays
-most gracefully and remains the strongest generate configuration at
-\texttt{max\_calls}\,=\,8 (61.4\%).
+scikit-llm is also the fastest classifier ($\approx$177--184\,s), versus
+$\approx$2{,}968--3{,}446\,s for multi-call \texttt{classify} and
+$\approx$429--501\,s for BART on CPU. The \texttt{generate} strategy reaches
+73.8\% accuracy in a single call (\texttt{max\_calls}\,=\,1, names only),
+matching scikit-llm while \emph{additionally} returning a full probability
+distribution and a confidence score, which the label-only scikit-llm does not
+provide; its wall-clock cost ($\approx$443--472\,s) is also comparable to BART
+despite running on the same generative backend. On this task the seven COICOP
+subclass names share no token prefixes, so the mass-preserving
+cluster-reproportioning path is never triggered and increasing
+\texttt{max\_calls} leaves the results unchanged---the
+non-degradation guarantee of v0.6.0 holds by construction
+(Figure~\ref{fig:generate}).
 
 \paragraph{Opt-out behavior.}
 Enabling opt-out, BART abstains on 37 products (5.8\%), Ollama
@@ -707,8 +726,9 @@ classification-by-definition most beneficial at higher, more ambiguous COICOP
 levels.
 
 \paragraph{Confidence and calibration.}
-Because scikit-llm is label-only, the confidence analysis covers the 22
-confidence-bearing variations (BART, \texttt{classify}, \texttt{generate}).
+Because scikit-llm is label-only, the confidence analysis covers the 10
+confidence-bearing variations (BART, \texttt{classify}, \texttt{generate} at
+its default single-call setting).
 Table~\ref{tab:confidence} reports, for each variation, the mean predicted-label
 confidence on correct and incorrect predictions, the point-biserial
 correlation $r$ between confidence and correctness, the mean score gap (top
@@ -721,28 +741,27 @@ and the Brier score.
 Both confidence and the score gap discriminate correctness. Welch $t$ tests
 (correct $>$ incorrect) are highly significant for every variation
 ($p<0.001$ after Benjamini--Hochberg correction within each metric family),
-and the point-biserial correlations are positive throughout ($r$ between 0.30
-and 0.54). The two generative strategies are miscalibrated, but in opposite
+and the point-biserial correlations are positive throughout ($r$ between 0.38
+and 0.49). The two generative strategies are miscalibrated, but in opposite
 directions. \texttt{classify} is \emph{underconfident}: its mean confidence
 sits well below its accuracy (e.g., names only: 0.59 vs.\ 0.76), so its
 reliability curve lies \emph{above} the diagonal, with empirical accuracy
 exceeding confidence in every bin (0.55$\to$0.79; 0.75$\to$0.95).
-\texttt{generate} is \emph{overconfident}: at low call budgets the mean
-confidence on incorrect predictions (0.82--0.85) exceeds BART's mean
-confidence on \emph{correct} predictions, and its curve bends below the
-diagonal. BART is well calibrated (ECE$\approx$0.03--0.06), close to the
-diagonal. Both generative strategies carry a large ECE
-(\texttt{classify} $\approx$0.15--0.20; \texttt{generate}
-$\approx$0.17--0.22), so their absolute probabilities are unreliable and call
+\texttt{generate} is \emph{overconfident}: the mean confidence on incorrect
+predictions (0.82--0.85) exceeds BART's mean confidence on \emph{correct}
+predictions, and its curve bends below the diagonal. BART is well calibrated
+(ECE$\approx$0.03--0.06), close to the diagonal. Both generative strategies
+carry a large ECE (\texttt{classify} $\approx$0.15--0.20; \texttt{generate}
+$\approx$0.19--0.21), so their absolute probabilities are unreliable and call
 for opposite post-hoc corrections---sharpening for \texttt{classify},
 softening for \texttt{generate}. The reliability curves in
 Figure~\ref{fig:calibration} make the asymmetry visible: BART tracks the
 diagonal, \texttt{classify} sits above it, and \texttt{generate} sits below.
 Ranking quality, by contrast, favors the generative methods: the ROC-AUC of
-confidence is 0.70 for BART but 0.79--0.83 for \texttt{classify}, indicating
-that even though the absolute confidence values are poorly calibrated, they
-order predictions by likelihood of correctness substantially better than
-chance and better than BART.
+confidence is 0.70 for BART but 0.78--0.83 for \texttt{classify} and
+0.78--0.83 for \texttt{generate}, indicating that even though the absolute
+confidence values are poorly calibrated, they order predictions by likelihood
+of correctness substantially better than chance and better than BART.
 
 \begin{figure}[htbp]
   \centering
@@ -759,16 +778,8 @@ chance and better than BART.
 
 \begin{table}[htbp]
   \centering
-  \caption{Confidence and calibration across the 22 confidence-bearing
-           variations. ``Conf'' is the mean predicted-label confidence on
-           correct/incorrect predictions; ``Gap'' is the mean score gap
-           (top minus second probability); $r$ is the point-biserial
-           correlation between confidence and correctness; $t$ is the
-           one-tailed Welch statistic (correct $>$ incorrect) for each
-           metric (all $p<0.001$ after BH correction). ECE uses 10
-           equal-width bins; AUC is the ROC-AUC of each score against
-           correctness; Brier is the mean squared error of confidence.
-           scikit-llm is omitted (label-only).}
+  \caption{Confidence and calibration across the 10 confidence-bearing
+           variations. }
   \label{tab:confidence}
   \resizebox{\textwidth}{!}{%
   \begin{tabular}{lccccccccccc}
@@ -786,32 +797,33 @@ chance and better than BART.
     Ollama \texttt{classify} (names + desc.) & 0.642 & 0.460 & 0.445 & 0.478 & 0.234 & 12.93 & 13.48 & 0.149 & 0.788 & 0.799 & 0.175 \\
     Ollama \texttt{classify} (desc. + opt-out) & 0.627 & 0.425 & 0.484 & 0.475 & 0.206 & 15.30 & 16.07 & 0.177 & 0.821 & 0.831 & 0.174 \\
     \addlinespace
-    Ollama \texttt{generate} (names only, mc=1) & 0.975 & 0.844 & 0.434 & 0.952 & 0.730 & 8.58 & 8.64 & 0.203 & 0.831 & 0.829 & 0.202 \\
-    Ollama \texttt{generate} (names only, mc=3) & 0.907 & 0.677 & 0.500 & 0.819 & 0.402 & 13.65 & 13.11 & 0.194 & 0.832 & 0.805 & 0.213 \\
-    Ollama \texttt{generate} (names only, mc=5) & 0.847 & 0.620 & 0.460 & 0.703 & 0.311 & 13.02 & 12.10 & 0.186 & 0.800 & 0.741 & 0.229 \\
-    Ollama \texttt{generate} (names only, mc=8) & 0.809 & 0.581 & 0.449 & 0.643 & 0.256 & 12.66 & 12.05 & 0.188 & 0.779 & 0.716 & 0.236 \\
-    Ollama \texttt{generate} (names + opt-out, mc=1) & 0.977 & 0.849 & 0.426 & 0.957 & 0.741 & 7.98 & 8.01 & 0.202 & 0.818 & 0.816 & 0.200 \\
-    Ollama \texttt{generate} (names + opt-out, mc=3) & 0.907 & 0.696 & 0.453 & 0.817 & 0.443 & 11.64 & 11.06 & 0.189 & 0.808 & 0.780 & 0.218 \\
-    Ollama \texttt{generate} (names + opt-out, mc=5) & 0.840 & 0.629 & 0.423 & 0.690 & 0.327 & 11.57 & 10.75 & 0.200 & 0.773 & 0.715 & 0.245 \\
-    Ollama \texttt{generate} (names + opt-out, mc=8) & 0.797 & 0.584 & 0.414 & 0.613 & 0.266 & 11.00 & 9.95 & 0.208 & 0.760 & 0.685 & 0.253 \\
-    Ollama \texttt{generate} (names + desc., mc=1) & 0.955 & 0.831 & 0.378 & 0.921 & 0.716 & 8.10 & 8.08 & 0.193 & 0.783 & 0.782 & 0.207 \\
-    Ollama \texttt{generate} (names + desc., mc=3) & 0.939 & 0.734 & 0.493 & 0.888 & 0.524 & 12.49 & 12.26 & 0.217 & 0.834 & 0.828 & 0.221 \\
-    Ollama \texttt{generate} (names + desc., mc=5) & 0.894 & 0.693 & 0.436 & 0.803 & 0.446 & 11.72 & 11.39 & 0.202 & 0.794 & 0.777 & 0.231 \\
-    Ollama \texttt{generate} (names + desc., mc=8) & 0.829 & 0.678 & 0.316 & 0.683 & 0.429 & 8.29 & 7.81 & 0.167 & 0.705 & 0.683 & 0.244 \\
-    Ollama \texttt{generate} (desc. + opt-out, mc=1) & 0.961 & 0.823 & 0.420 & 0.933 & 0.703 & 8.92 & 9.00 & 0.205 & 0.822 & 0.821 & 0.210 \\
-    Ollama \texttt{generate} (desc. + opt-out, mc=3) & 0.941 & 0.709 & 0.536 & 0.894 & 0.474 & 13.98 & 13.90 & 0.220 & 0.853 & 0.849 & 0.216 \\
-    Ollama \texttt{generate} (desc. + opt-out, mc=5) & 0.875 & 0.663 & 0.440 & 0.768 & 0.393 & 11.92 & 11.51 & 0.181 & 0.794 & 0.768 & 0.224 \\
-    Ollama \texttt{generate} (desc. + opt-out, mc=8) & 0.805 & 0.655 & 0.304 & 0.649 & 0.383 & 7.94 & 7.86 & 0.176 & 0.684 & 0.675 & 0.250 \\
+    Ollama \texttt{generate} (names only) & 0.975 & 0.844 & 0.434 & 0.952 & 0.730 & 8.58 & 8.64 & 0.203 & 0.831 & 0.829 & 0.202 \\
+    Ollama \texttt{generate} (names + opt-out) & 0.977 & 0.849 & 0.426 & 0.957 & 0.741 & 7.98 & 8.01 & 0.202 & 0.818 & 0.816 & 0.200 \\
+    Ollama \texttt{generate} (names + desc.) & 0.955 & 0.831 & 0.378 & 0.921 & 0.716 & 8.10 & 8.08 & 0.193 & 0.783 & 0.782 & 0.207 \\
+    Ollama \texttt{generate} (desc. + opt-out) & 0.961 & 0.823 & 0.420 & 0.933 & 0.703 & 8.92 & 9.00 & 0.205 & 0.822 & 0.821 & 0.210 \\
     \bottomrule
   \end{tabular}}
+  \footnotesize{
+    ``Conf'' is the mean predicted-label confidence on
+    correct/incorrect predictions; ``Gap'' is the mean score gap
+    (top minus second probability); $r$ is the point-biserial
+    correlation between confidence and correctness; $t$ is the
+    one-tailed Welch statistic (correct $>$ incorrect) for each
+    metric (all $p<0.001$ after BH correction). ECE uses 10
+    equal-width bins; AUC is the ROC-AUC of each score against
+    correctness; Brier is the mean squared error of confidence.
+    scikit-llm is omitted (label-only). For \texttt{generate} only
+     the default single-call setting is reported (larger budgets are
+     identical on this task).
+  }
 \end{table}
 
 \paragraph{Threshold-based discrimination.}
-A Practitioner does not need well-calibrated probabilities to deploy triage:
+A practitioner does not need well-calibrated probabilities to deploy triage:
 it suffices that a threshold on confidence, or on the score gap, separates
 correct from incorrect predictions. The distributional basis for this
 separation is visible in the confidence and score-gap boxplots
-(Figures~\ref{fig:conf-boxplots} and \ref{fig:gap-boxplots}): across all 22
+(Figures~\ref{fig:conf-boxplots} and \ref{fig:gap-boxplots}): across all 10
 confidence-bearing variations, correct predictions consistently concentrate at
 higher values than incorrect ones. Table~\ref{tab:threshold} reports, for the
 six headline variations, the ROC-AUC of each score and the Youden-optimal
@@ -835,12 +847,7 @@ distinguishes \texttt{ollama-classifier} from the label-only scikit-llm.
 
 \begin{table}[htbp]
   \centering
-  \caption{Threshold discrimination for the six headline variations. AUC is
-           the ROC-AUC of each score against correctness; the remaining
-           columns report the Youden-optimal threshold ($J=\text{TPR}-\text{FPR}$)
-           and the selective accuracy (accuracy among items with score
-           $\geq$ threshold) and coverage (\% retained) at that threshold, for
-           confidence and for the score gap (margin) separately.}
+  \caption{Threshold discrimination for the six headline variations.}
   \label{tab:threshold}
   \resizebox{\textwidth}{!}{%
   \begin{tabular}{lcccccccc}
@@ -862,13 +869,20 @@ distinguishes \texttt{ollama-classifier} from the label-only scikit-llm.
     Ollama \texttt{classify} (desc. + opt-out) & 0.821 & 0.55 & 93.4 & 55.0 & 0.831 & 0.32 & 91.8 & 62.6 \\
     \bottomrule
   \end{tabular}}
+  \footnotesize{
+    AUC is the ROC-AUC of each score against correctness; the remaining
+    columns report the Youden-optimal threshold ($J=\text{TPR}-\text{FPR}$)
+    and the selective accuracy (accuracy among items with score
+    $\geq$ threshold) and coverage (\% retained) at that threshold, for
+    confidence and for the score gap (margin) separately.
+}
 \end{table}
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.95\textwidth]{confidence_boxplots}
-  \caption{Confidence distributions for correct (green) and incorrect (red)
-           predictions across all 22 confidence-bearing variations. Each panel
+   \caption{Confidence distributions for correct (green) and incorrect (red)
+            predictions across all 10 confidence-bearing variations. Each panel
            shows the boxplot and individual data points (jittered) for one
            variation, annotated with the sample size $N$ and the one-tailed
            Welch $t$-test $p$-value (correct $>$ incorrect). Correct
@@ -880,9 +894,9 @@ distinguishes \texttt{ollama-classifier} from the label-only scikit-llm.
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.95\textwidth]{scoregap_boxplots}
-  \caption{Score-gap (top minus second-highest class probability)
-           distributions for correct and incorrect predictions across all 22
-           confidence-bearing variations. Same layout as
+   \caption{Score-gap (top minus second-highest class probability)
+            distributions for correct and incorrect predictions across all 10
+            confidence-bearing variations. Same layout as
            Figure~\ref{fig:conf-boxplots}. The score gap discriminates
            correctness comparably to confidence, with correct predictions
            showing larger margins.}
@@ -935,13 +949,14 @@ distinguishes \texttt{ollama-classifier} from the label-only scikit-llm.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.9\textwidth]{generate_sweep}
-  \caption{Adaptive \texttt{generate} strategy: accuracy, mean confidence,
-           ECE, and AUC against the call budget (\texttt{max\_calls}), by
-           choice configuration. The vertical dotted line marks the boundary
-           between the approximate regime (\texttt{max\_calls}\,$\leq$\,5,
-           all predictions approximate) and the exact point
-           (\texttt{max\_calls}\,=\,8).}
+  \includegraphics[width=0.9\textwidth]{generate_vs_classify}
+  \caption{Generate (single call, \texttt{max\_calls}\,=\,1) vs.\
+           \texttt{classify} (one call per label): accuracy, mean confidence,
+           Expected Calibration Error, and ROC-AUC of confidence, by choice
+           configuration. \texttt{generate} approaches \texttt{classify}
+           accuracy at one-seventh to one-eighth the call cost (637 vs.\
+           4{,}459--5{,}096 total calls) while returning a full probability
+           distribution; it is markedly overconfident (higher ECE).}
   \label{fig:generate}
 \end{figure}
 
@@ -971,10 +986,12 @@ fine-tuning, relying on prompting and retrieval; this maximizes flexibility
 (models, classes, and domains change without retraining) at the cost of
 task-specific accuracy. Third, it exposes two scoring strategies with an
 explicit cost--accuracy trade-off: \texttt{classify} spends one call per label
-for exact, calibrated probabilities, whereas \texttt{generate} reconstructs
-scores from a budget-controlled number of constrained calls and flags
-approximate results through its coverage field---letting users choose speed
-over exactness and inspect partial coverage when they do.
+for exact, calibrated probabilities, whereas \texttt{generate} reconstructs a
+full probability distribution from a single constrained call and refines it,
+when asked, through mass-preserving cluster reproportioning that can only
+sharpen the distribution within a group---so accuracy is monotone
+non-decreasing in the call budget, and partial coverage is always reported
+through the \texttt{coverage} field.
 
 \subsection{Limitations}
 
@@ -1003,10 +1020,11 @@ multi-user, server-based deployments are left to future work.
 We have presented \texttt{ollama-classifier}, an open-source Python library
 for zero-shot and few-shot text classification with locally-hosted LLMs. The
 library provides two confidence-bearing scoring strategies---multi-call
-completion scoring and adaptive trie-masked generation---across four
+completion scoring and hierarchical constrained generation with mass-preserving
+cluster refinement---across four
 inference backends, with constrained output generation, batch and asynchronous
 APIs, and a retrieval-augmented pipeline. A desktop GUI and cross-language
-ports in R (\texttt{rollama-classifier}) and Rust
+ports in R (\texttt{rollama}) and Rust
 (\texttt{ollama-classifier-rs}) extend the same API to non-programmers and to
 other ecosystems. On a COICOP product-classification benchmark, a compact 3B
 model served locally substantially outperforms a BART NLI baseline and matches

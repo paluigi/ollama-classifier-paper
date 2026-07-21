@@ -32,11 +32,12 @@
 }
 
 @software{rollama-classifier,
-  title = {rollama-classifier: An R Port of ollama-classifier for
+  title = {rollama: An R Port of ollama-classifier for
            Text Classification with Constrained Output and Confidence
            Scoring},
   author = {Palumbo, Luigi and Yu, Mengting},
   url = {https://github.com/paluigi/rollama-classifier},
+  version = {0.6.0},
   year = {2026},
 }
 
@@ -47,11 +48,11 @@
   author = {Palumbo, Luigi and Yu, Mengting},
   url = {https://github.com/paluigi/ollama-classifier-rs},
   howpublished = {crates.io: https://crates.io/crates/ollama-classifier-rs},
-  version = {0.4.1},
+  version = {0.6.0},
   year = {2026},
   annote = {Rust port of the Python library, edition 2021. Full API parity
             (four backends, classify/generate, ClassificationResult, batch and
-            async variants) as of Python v0.4.1.}
+            async variants) as of Python v0.6.0.}
 }
 
 @software{flet,
@@ -702,8 +703,15 @@
   annote = {The companion desktop application of the ollama-classifier library,
             built with Flet. It exposes the full classification workflow
             (backend configuration, data loading, schema definition, and
-            results review) through a point-and-click four-tab interface,
+            results review) through a point-and-click five-tab interface,
             enabling non-technical users to leverage retrieval-augmented LLM
             classification without writing code. Publicly released on GitHub
             and PyPI.}
+}
+
+@software{skollama,
+    author = {Andreas Karasenko},
+    year = {2024},
+    title = {Scikit-Ollama: an extension of Scikit-LLM for Ollama served models},
+    url = {https://github.com/AndreasKarasenko/scikit-ollama}
 }

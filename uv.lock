@@ -1858,15 +1858,15 @@ wheels = [
 
 [[package]]
 name = "ollama-classifier"
-version = "0.5.0"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/08/75/be43acccc0f818059da1d86dfff65f891a4874f710aef188883ccc45e1c7/ollama_classifier-0.5.0.tar.gz", hash = "sha256:f3a8ef6f3ac33f46f8332e2b267c32f63e78c579872b7f53bb27a9eff876031d", size = 24406, upload-time = "2026-07-11T23:10:11.899Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/72/c28820c79164d4dae7189c3009e89eff209c2710c70ab66fe458ca4630c8/ollama_classifier-0.6.0.tar.gz", hash = "sha256:2188f99f833acf621cbf67eae723ae7d631ba4a647a696d46d1928eeb50caf31", size = 25382, upload-time = "2026-07-14T20:27:07.982Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/aa/9bc5e1e201efade7305fa9bc5c426a093bcc8d334177bf99ebfa468a2da5/ollama_classifier-0.5.0-py3-none-any.whl", hash = "sha256:1c6f1440ad912ac1a23d8c925bbdf69475c66bcc568fb9e9a25de28106fce511", size = 34814, upload-time = "2026-07-11T23:10:10.689Z" },
+    { url = "https://files.pythonhosted.org/packages/32/ba/11a01052396e4db9705b0306064541cc3eeaa574a258c0174cf540a71eaa/ollama_classifier-0.6.0-py3-none-any.whl", hash = "sha256:d21379c0596828da78ad7e3a18b7470764d8cd2256530db1aae6953298c58715", size = 35821, upload-time = "2026-07-14T20:27:06.805Z" },
 ]
 
 [package.optional-dependencies]
@@ -1896,7 +1896,7 @@ dependencies = [
 requires-dist = [
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "ollama", specifier = ">=0.6.2" },
-    { name = "ollama-classifier", extras = ["ollama"], specifier = ">=0.5.0" },
+    { name = "ollama-classifier", extras = ["ollama"], specifier = ">=0.6.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=3.0.2" },
     { name = "scikit-llm", specifier = ">=0.4.2,<0.5" },
