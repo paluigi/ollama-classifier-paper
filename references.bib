@@ -93,7 +93,7 @@
   author = {Lewis, Patrick and Perez, Ethan and Piktus, Aleksandra and
             Petroni, Fabio and Karpukhin, Vladimir and Goyal, Naman and
             K{\"u}ttler, Heinrich and Lewis, Mike and Yih, Wen-tau and
-            Rockt{\"a}schel, Tim and others},
+            Rockt{\"a}schel, Tim and Riedel, Sebastian and Kiela, Douwe},
   booktitle = {Advances in Neural Information Processing Systems},
   volume = {33},
   pages = {9459--9474},
@@ -115,7 +115,8 @@
                EMNLP},
   pages = {6721--6735},
   year = {2023},
-  url = {https://arxiv.org/abs/2308.13314},
+  doi = {10.18653/v1/2023.findings-emnlp.447},
+  url = {https://aclanthology.org/2023.findings-emnlp.447/},
   annote = {Directly relevant to the classification methodology implemented in
             ollama-classifier. Demonstrates that combining nearest-neighbor
             retrieval with few-shot prompting improves text classification
@@ -130,7 +131,7 @@
                Theory of Information Retrieval},
   pages = {195--203},
   year = {2024},
-  doi = {10.1145/3675118.3675148},
+  doi = {10.1145/3664190.3672514},
   annote = {Extends retrieval-augmented classification to the zero-shot setting,
             closely aligning with ollama-classifier's ability to classify into
             arbitrary taxonomies without training data. The library's approach
@@ -138,11 +139,11 @@
             methodology explored in this work.}
 }
 
-@article{nunes2025rac,
+@inproceedings{nunes2025rac,
   title = {Classification at Scale: A Retrieval-Augmented Classification
            Framework for {COICOP} 2018 Consumer Products},
   author = {Nunes, In{\^e}s and Palumbo, Luigi and Vollero, Luca and Laureti, Tiziana and Bacco, Luca},
-  journal = {19th meeting of the Ottawa Group on Price Indices},
+  booktitle = {19th meeting of the Ottawa Group on Price Indices},
   year = {2026},
   url = {https://ottawagroup2026.stat.gov.pl/en/DownloadFile?nrSesji=11&nrWystapienia=13&nrPliku=3},
   annote = {Foundational work by the same author of ollama-classifier,
@@ -305,7 +306,7 @@
   number = {2},
   pages = {152--165},
   year = {2013},
-  doi = {10.1016/j.jmoneco.2012.10.003},
+  doi = {10.1016/j.jmoneco.2012.10.002},
   annote = {Establishes the economic motivation for automated product
             classification by demonstrating the viability of online price data
             for computing inflation indicators. Provides the broader context
@@ -339,7 +340,7 @@
   number = {1},
   pages = {283--303},
   year = {2017},
-  doi = {10.1257/aer.20151526},
+  doi = {10.1257/aer.20160542},
   annote = {Provides evidence that online prices reliably track offline market
             dynamics, further legitimizing the use of web-scraped data for
             economic statistics. Supports the case for tools like
@@ -412,7 +413,7 @@
   number = {7},
   pages = {e2215907120},
   year = {2023},
-  doi = {10.1073/pnas.2215907120},
+  doi = {10.1073/pnas.2305016120},
   annote = {Demonstrates that LLMs can match or exceed human crowd-workers for
             text classification tasks. This finding directly supports
             ollama-classifier's premise: that locally-run LLMs, especially when
@@ -450,28 +451,13 @@
   volume = {228},
   pages = {107243},
   year = {2021},
-  doi = {10.1016/j.knosys.2021.107243},
+  doi = {10.1016/j.knosys.2020.106622},
   annote = {AutoML aims to automate the ML pipeline, making it accessible to
             non-experts. The ollama-classifier GUI shares this philosophy,
             abstracting the complexity of RAC---including retrieval
             configuration, embedding selection, and prompt engineering---behind
             an intuitive interface, analogous to how AutoML tools hide
             hyperparameter tuning and model selection.}
-}
-
-@article{lazaridou2023ai,
-  title = {Towards {AI} That Can Solve Science: A Community-Driven
-           Perspective},
-  author = {Lazaridou, Angeliki and Kobyzev, Ivan and Mahowald, Kyle and
-            Mordatch, Igor and Niekum, Scott and others},
-  journal = {arXiv preprint arXiv:2308.11016},
-  year = {2023},
-  url = {https://arxiv.org/abs/2308.11016},
-  annote = {Discusses the importance of democratizing access to AI tools for
-            domain experts who are not ML specialists. Relevant to the
-            ollama-classifier GUI's goal of enabling non-technical users---such
-            as economists, statisticians, and data officers---to leverage
-            state-of-the-art LLM classification without writing code.}
 }
 
 % =============================================================================
@@ -582,9 +568,9 @@
 @article{hakimi2026humans,
   title        = {Do We Still Need Humans in the Loop? Comparing Human and {LLM} Annotation in Active Learning},
   author       = {Hakimi, Vaishnav and Bowen, Luke and others},
-  journal      = {arXiv preprint arXiv:2601.09346},
+  journal      = {arXiv preprint arXiv:2604.13899},
   year         = {2026},
-  doi          = {10.48550/arXiv.2601.09346},
+  doi          = {10.48550/arXiv.2604.13899},
   annote       = {Compares human annotators with LLMs within an active learning framework. Provides empirical context for the research paper's argument that tools like ollama-classifier should be viewed as assistants that reduce human labeling burden (e.g., via confident auto-labeling and uncertain opt-outs) rather than full replacements for domain experts.}
 }
 
@@ -633,10 +619,10 @@
 }
 
 @software{golino2023llmclassificr,
-  title        = {llmClassificR: Toolkit per classificazione testuale con Large Language Models},
+  title        = {llmClassificR: Text Classification with Large Language Models in R},
   author       = {Golino, Hudson},
-  year         = {2023},
-  url          = {https://github.com/GoBru/llmClassificR},
+  year         = {2025},
+  url          = {https://github.com/hfgolino/llmClassificR},
   annote       = {An R package for text classification using LLMs. Serves as cross-language related work, demonstrating that the demand for LLM-based classification tools spans beyond the Python ecosystem. It reinforces the need for ollama-classifier's specialized focus on retrieval-augmented, constrained-generation workflows in Python.}
 }
 
@@ -649,13 +635,6 @@
   annote       = {Presents BLOOM, a massive open-access multilingual language model. BLOOM represents an important milestone in open-source multilingual LLMs, which is highly relevant to ollama-classifier's goal of classifying multilingual product data (e.g., Italian, Maltese, German) without relying on proprietary APIs.}
 }
 
-@misc{weijia2024ollama,
-  title        = {Harnessing Local {LLMs}: Using Ollama to Categorize and Analyze Qualitative Data},
-  author       = {Weijia},
-  year         = {2024},
-  url          = {https://medium.com/@weijiawa/harnessing-local-large-language-models-using-ollama-to-categorize-and-analyze-qualitative-data-35d1975da1e9},
-  annote       = {A practical blog post demonstrating the grassroots use of Ollama for categorizing qualitative data. Useful as anecdotal evidence in the introduction or motivation sections of the paper, showing that practitioners are actively seeking local LLM solutions for classification, which ollama-classifier formalizes into a robust, reusable library.}
-}
 
 @article{wang2024sentiment,
   title        = {Is {ChatGPT} a Good Sentiment Analyzer? A Preliminary Study},

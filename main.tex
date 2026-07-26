@@ -497,8 +497,7 @@ semantics.
 Many potential users---domain experts, statisticians, and data officers---lack
 programming expertise, and bridging the gap between machine-learning (ML)
 models and end users is
-a known barrier to adoption \citep{amershi2019software, he2021automl,
-lazaridou2023ai}. \texttt{ollama-classifier-gui} \citep{ollama-classifier-gui}
+a known barrier to adoption \citep{amershi2019software, he2021automl}. \texttt{ollama-classifier-gui} \citep{ollama-classifier-gui}
 is a companion desktop application, built with Flet \citep{flet}, that exposes
 the full workflow through a five-tab interface: \textbf{Settings} (backend,
 endpoint, model, connection test, optional API key, theme); \textbf{Data
@@ -559,7 +558,7 @@ let res = clf.classify(
     "I love this product!",
     vec!["positive", "negative", "neutral"],
     None,
-)?;
+);
 res.prediction
 res.confidence
 \end{lstlisting}
